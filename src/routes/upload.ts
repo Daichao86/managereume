@@ -1,0 +1,234 @@
+// ==========================================
+// 简历上传与AI解析API路由
+// ==========================================
+import { Hono } from 'hono'
+import { db } from '../lib/database'
+import { parseResumeWithAI, extractTextFromFile, calculateProfileCompleteness } from '../lib/ai-parser'
+
+type Bindings = {
+  OPENAI_API_KEY: string
+  OPENAI_BASE_URL: string
+}
+
+const upload = new Hono<{ Bindings: Bindings }>()
+
+// POST /api/upload/resume - 上传并AI解析简历
+upload.post('/resume', async (c) => {
+  try {
+    // 获取API Key：优先从请求头，其次从环境变量
+    const apiKey = c.req.header('X-OpenAI-Key') || c.env?.OPENAI_API_KEY || ''
+    const apiBaseUrl = c.req.header('X-OpenAI-Base-URL') || c.env?.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    
+    if (!apiKey) {
+      return c.json({ 
+        success: false, 
+        message: 'OpenAI API Key未配置，请在系统设置中配置API Key' 
+      }, 400)
+    }
+
+    // 解析multipart表单
+    const formData = await c.req.formData()
+    const file = formData.get('file') as File | null
+    const sourceChannel = formData.get('sourceChannel') as string || '手动上传'
+    
+    if (!file) {
+      return c.json({ success: false, message: '请选择要上传的简历文件' }, 400)
+    }
+
+    // 验证文件类型
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'text/html',
+      'image/jpeg',
+      'image/png',
+      'image/webp'
+    ]
+    
+    const allowedExts = ['pdf', 'doc', 'docx', 'txt', 'html', 'htm', 'jpg', 'jpeg', 'png', 'webp']
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
+    
+    if (!allowedTypes.includes(file.type) && !allowedExts.includes(fileExt)) {
+      return c.json({ 
+        success: false, 
+        message: `不支持的文件格式，请上传 PDF、Word、TXT、HTML 或图片格式的简历` 
+      }, 400)
+    }
+
+    // 文件大小限制（10MB）
+    if (file.size > 10 * 1024 * 1024) {
+      return c.json({ success: false, message: '文件大小不能超过10MB' }, 400)
+    }
+
+    // 读取文件内容
+    const fileBuffer = await file.arrayBuffer()
+    
+    // 创建解析任务记录
+    const task = db.createParseTask({
+      fileName: file.name,
+      fileType: file.type || fileExt,
+      status: 'processing',
+      candidateId: undefined
+    })
+    
+    try {
+      // 提取文本内容
+      let resumeText = await extractTextFromFile(
+        fileBuffer, 
+        file.name, 
+        file.type,
+        apiKey,
+        apiBaseUrl
+      )
+      
+      if (!resumeText || resumeText.trim().length < 20) {
+        // 尝试直接作为文本读取
+        resumeText = new TextDecoder('utf-8', { fatal: false }).decode(fileBuffer)
+      }
+
+      if (!resumeText || resumeText.trim().length < 10) {
+        db.updateParseTask(task.id!, { status: 'failed', errorMsg: '无法提取文件文本内容' })
+        return c.json({ 
+          success: false, 
+          message: '无法从文件中提取文本内容，请确保文件不是加密的PDF或不可读的图片' 
+        }, 400)
+      }
+
+      // AI解析
+      const parseResult = await parseResumeWithAI(resumeText, apiKey, apiBaseUrl)
+      
+      if (!parseResult.name) {
+        parseResult.name = file.name.replace(/\.[^.]+$/, '').replace(/简历|_resume|resume/gi, '').trim() || '未知姓名'
+      }
+      
+      // 创建候选人记录
+      const candidate = db.createCandidate({
+        ...parseResult,
+        sourceChannel,
+        rawResumeText: resumeText.slice(0, 5000),
+        resumeFileName: file.name,
+        candidateStatus: 'active',
+        matchScore: calculateProfileCompleteness(parseResult)
+      })
+      
+      // 更新任务状态
+      db.updateParseTask(task.id!, { 
+        status: 'completed', 
+        candidateId: candidate.id,
+        parseResult: JSON.stringify(parseResult)
+      })
+      
+      return c.json({
+        success: true,
+        data: {
+          candidate,
+          parseResult,
+          taskId: task.id
+        },
+        message: `简历解析成功！已为 ${candidate.name} 创建候选人档案`
+      })
+      
+    } catch (parseError: any) {
+      db.updateParseTask(task.id!, { 
+        status: 'failed', 
+        errorMsg: parseError.message 
+      })
+      throw parseError
+    }
+    
+  } catch (e: any) {
+    console.error('简历解析错误:', e)
+    return c.json({ 
+      success: false, 
+      message: `简历解析失败: ${e.message || '未知错误'}` 
+    }, 500)
+  }
+})
+
+// POST /api/upload/text - 直接粘贴文本解析
+upload.post('/text', async (c) => {
+  try {
+    const apiKey = c.req.header('X-OpenAI-Key') || c.env?.OPENAI_API_KEY || ''
+    const apiBaseUrl = c.req.header('X-OpenAI-Base-URL') || c.env?.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    
+    if (!apiKey) {
+      return c.json({ 
+        success: false, 
+        message: 'OpenAI API Key未配置' 
+      }, 400)
+    }
+    
+    const body = await c.req.json() as { text: string, sourceChannel?: string }
+    
+    if (!body.text || body.text.trim().length < 20) {
+      return c.json({ success: false, message: '简历文本内容过短，请输入完整的简历信息' }, 400)
+    }
+    
+    const parseResult = await parseResumeWithAI(body.text, apiKey, apiBaseUrl)
+    
+    if (!parseResult.name) {
+      parseResult.name = '未知姓名'
+    }
+    
+    const candidate = db.createCandidate({
+      ...parseResult,
+      sourceChannel: body.sourceChannel || '文本导入',
+      rawResumeText: body.text.slice(0, 5000),
+      candidateStatus: 'active',
+      matchScore: calculateProfileCompleteness(parseResult)
+    })
+    
+    return c.json({
+      success: true,
+      data: { candidate, parseResult },
+      message: `简历解析成功！已为 ${candidate.name} 创建候选人档案`
+    })
+    
+  } catch (e: any) {
+    return c.json({ 
+      success: false, 
+      message: `解析失败: ${e.message}` 
+    }, 500)
+  }
+})
+
+// GET /api/upload/task/:id - 获取解析任务状态
+upload.get('/task/:id', (c) => {
+  const id = parseInt(c.req.param('id'))
+  const task = db.getParseTask(id)
+  
+  if (!task) {
+    return c.json({ success: false, message: '任务不存在' }, 404)
+  }
+  
+  return c.json({ success: true, data: task })
+})
+
+// POST /api/upload/config - 设置API Key（运行时）
+upload.post('/config', async (c) => {
+  try {
+    const { openaiKey, openaiBaseUrl } = await c.req.json()
+    
+    if (!openaiKey) {
+      return c.json({ success: false, message: 'API Key不能为空' }, 400)
+    }
+    
+    // 在实际生产中，这会存储在 Cloudflare KV 或环境变量中
+    // 这里模拟验证
+    const testResponse = await fetch(`${openaiBaseUrl || 'https://api.openai.com/v1'}/models`, {
+      headers: { 'Authorization': `Bearer ${openaiKey}` }
+    })
+    
+    if (!testResponse.ok) {
+      return c.json({ success: false, message: 'API Key无效，请检查后重试' }, 400)
+    }
+    
+    return c.json({ success: true, message: 'API Key验证成功' })
+  } catch (e: any) {
+    return c.json({ success: false, message: `验证失败: ${e.message}` }, 500)
+  }
+})
+
+export default upload
