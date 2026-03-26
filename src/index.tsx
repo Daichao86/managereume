@@ -73,6 +73,27 @@ function getIndexHtml() {
     .sidebar-link .menu-icon { flex-shrink: 0; width: 18px; text-align: center; font-size: 14px; }
     .sidebar-link .menu-text { flex: 1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sidebar-link .menu-badge { flex-shrink: 0; background: #1e40af; font-size: 11px; border-radius: 9999px; padding: 1px 7px; }
+    .sidebar-link .menu-arrow { flex-shrink: 0; font-size: 11px; opacity: 0.6; transition: transform 0.2s; }
+    .sidebar-link.open .menu-arrow { transform: rotate(90deg); }
+    /* 二级子菜单 */
+    .sub-menu { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
+    .sub-menu.open { max-height: 200px; }
+    .sub-link {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px 8px 38px;
+      border-radius: 8px;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-decoration: none;
+      white-space: nowrap;
+      font-size: 13px;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    .sub-link:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
+    .sub-link.active { background: rgba(37,99,235,0.5); color: #fff; }
+    .sub-link .sub-icon { flex-shrink: 0; width: 16px; text-align: center; font-size: 12px; }
     /* 标签样式 */
     .tag-skill { background: #dbeafe; color: #1d4ed8; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
     .tag-industry { background: #dcfce7; color: #15803d; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
@@ -145,10 +166,29 @@ function getIndexHtml() {
         <span class="menu-text">统计分析</span>
       </a>
       <div style="height:1px;background:rgba(255,255,255,0.1);margin:6px 4px"></div>
-      <a class="sidebar-link" onclick="navigateTo('settings')" id="nav-settings">
-        <i class="fas fa-cog menu-icon"></i>
-        <span class="menu-text">系统设置</span>
-      </a>
+      <!-- 系统设置：一级菜单（可折叠） -->
+      <div>
+        <a class="sidebar-link" onclick="toggleSettingsMenu()" id="nav-settings">
+          <i class="fas fa-cog menu-icon"></i>
+          <span class="menu-text">系统设置</span>
+          <i class="fas fa-chevron-right menu-arrow" id="settings-arrow"></i>
+        </a>
+        <!-- 二级子菜单 -->
+        <div class="sub-menu" id="settings-submenu">
+          <a class="sub-link" onclick="navigateToSettings('ai')" id="nav-settings-ai">
+            <i class="fas fa-robot sub-icon"></i>
+            <span>AI 配置</span>
+          </a>
+          <a class="sub-link" onclick="navigateToSettings('users')" id="nav-settings-users">
+            <i class="fas fa-users-cog sub-icon"></i>
+            <span>用户管理</span>
+          </a>
+          <a class="sub-link" onclick="navigateToSettings('system')" id="nav-settings-system">
+            <i class="fas fa-info-circle sub-icon"></i>
+            <span>系统信息</span>
+          </a>
+        </div>
+      </div>
     </nav>
     
     <!-- AI状态 -->
@@ -261,17 +301,83 @@ function getTagClass(type) {
 // ==========================================
 function navigateTo(page, params = {}) {
   state.currentPage = page
+  // 清除所有一级激活态
   document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'))
+  // 清除所有二级激活态
+  document.querySelectorAll('.sub-link').forEach(el => el.classList.remove('active'))
   const navEl = document.getElementById('nav-' + page)
   if (navEl) navEl.classList.add('active')
-  
+
+  // 如果跳到 settings 页（非子菜单调用时），展开子菜单并默认高亮 AI 配置
+  if (page === 'settings') {
+    openSettingsMenu()
+    const firstSub = document.getElementById('nav-settings-ai')
+    if (firstSub) firstSub.classList.add('active')
+  } else {
+    // 跳到其他页时，收起设置子菜单
+    closeSettingsMenu()
+  }
+
   // 销毁图表
   Object.values(state.charts).forEach(chart => { try { chart.destroy() } catch {} })
   state.charts = {}
-  
+
   const pages = { dashboard: renderDashboard, candidates: renderCandidateList, upload: renderUpload, analytics: renderAnalytics, settings: renderSettings }
   const renderFn = pages[page]
   if (renderFn) renderFn(params)
+}
+
+// 打开设置子菜单
+function openSettingsMenu() {
+  const submenu = document.getElementById('settings-submenu')
+  const arrow   = document.getElementById('settings-arrow')
+  const parent  = document.getElementById('nav-settings')
+  if (submenu) submenu.classList.add('open')
+  if (arrow)   arrow.style.transform = 'rotate(90deg)'
+  if (parent)  parent.classList.add('open')
+}
+
+// 收起设置子菜单
+function closeSettingsMenu() {
+  const submenu = document.getElementById('settings-submenu')
+  const arrow   = document.getElementById('settings-arrow')
+  const parent  = document.getElementById('nav-settings')
+  if (submenu) submenu.classList.remove('open')
+  if (arrow)   arrow.style.transform = ''
+  if (parent)  { parent.classList.remove('open'); parent.classList.remove('active') }
+  // 清除子菜单高亮
+  document.querySelectorAll('.sub-link').forEach(el => el.classList.remove('active'))
+}
+
+// 一级菜单点击：切换展开/收起
+function toggleSettingsMenu() {
+  const submenu = document.getElementById('settings-submenu')
+  if (submenu && submenu.classList.contains('open')) {
+    closeSettingsMenu()
+  } else {
+    // 清除其他一级激活
+    document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'))
+    document.getElementById('nav-settings')?.classList.add('active')
+    openSettingsMenu()
+    // 默认进入 AI 配置
+    navigateToSettings('ai')
+  }
+}
+
+// 二级子菜单导航
+function navigateToSettings(tab) {
+  // 父菜单激活
+  document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'))
+  document.getElementById('nav-settings')?.classList.add('active')
+  openSettingsMenu()
+  // 子菜单高亮
+  document.querySelectorAll('.sub-link').forEach(el => el.classList.remove('active'))
+  document.getElementById('nav-settings-' + tab)?.classList.add('active')
+  // 销毁图表
+  Object.values(state.charts).forEach(chart => { try { chart.destroy() } catch {} })
+  state.charts = {}
+  state.currentPage = 'settings'
+  renderSettings(tab)
 }
 
 // ==========================================
@@ -2286,6 +2392,9 @@ function switchSettingsTab(tab) {
       ? 'px-5 py-2.5 text-sm font-medium rounded-xl transition bg-white shadow text-blue-600'
       : 'px-5 py-2.5 text-sm font-medium rounded-xl transition text-gray-500 hover:text-gray-700'
   })
+  // 同步侧边栏子菜单高亮
+  document.querySelectorAll('.sub-link').forEach(el => el.classList.remove('active'))
+  document.getElementById('nav-settings-' + tab)?.classList.add('active')
   if (tab === 'users') loadAndRenderUsers()
 }
 
