@@ -553,6 +553,13 @@ class MemoryDatabase {
     const start = (page - 1) * pageSize
     list = list.slice(start, start + pageSize)
     
+    // 附加轻量关联数据（tags 用于列表展示，skills 用于技能筛选展示）
+    list = list.map(c => ({
+      ...c,
+      tags: Array.from(this.tags.values()).filter(t => t.candidateId === c.id),
+      skills: Array.from(this.skills.values()).filter(s => s.candidateId === c.id)
+    }))
+    
     return { list, total }
   }
 

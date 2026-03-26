@@ -483,7 +483,9 @@ async function renderDashboard() {
   \`
   
   const stats = await loadStats()
-  await loadCandidates({ page: 1, pageSize: 5 })
+  // 看板用独立请求获取最近候选人，避免污染 state.searchParams（否则切换到列表页时 pageSize 会变成5）
+  const recentRes = await apiRequest('/api/candidates?page=1&pageSize=5&sortBy=createdAt&sortOrder=desc')
+  const recentCandidates = recentRes.success ? recentRes.data : []
   
   // 更新统计卡片
   document.getElementById('statCards').innerHTML = \`
@@ -580,8 +582,8 @@ async function renderDashboard() {
   }
   
   // 技能热词云
-  if (stats.topSkills) {
-    const maxCount = Math.max(...stats.topSkills.map(s => s.count))
+  if (stats.topSkills && stats.topSkills.length > 0) {
+    const maxCount = Math.max(...stats.topSkills.map(s => s.count)) || 1
     document.getElementById('skillCloud').innerHTML = stats.topSkills.map(s => {
       const ratio = s.count / maxCount
       const size = ratio > 0.8 ? 'text-base font-bold' : ratio > 0.5 ? 'text-sm font-semibold' : 'text-xs'
@@ -591,7 +593,7 @@ async function renderDashboard() {
   }
   
   // 最新候选人
-  document.getElementById('recentCandidates').innerHTML = state.candidates.length === 0 ? 
+  document.getElementById('recentCandidates').innerHTML = recentCandidates.length === 0 ? 
     '<p class="text-center text-gray-400 py-4">暂无候选人数据</p>' :
     \`<table class="w-full text-sm">
       <thead><tr class="text-gray-500 border-b">
@@ -604,7 +606,7 @@ async function renderDashboard() {
         <th class="text-left py-2 font-medium">时间</th>
       </tr></thead>
       <tbody>
-        \${state.candidates.map(c => \`<tr class="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onclick="viewCandidate(\${c.id})">
+        \${recentCandidates.map(c => \`<tr class="border-b border-gray-50 hover:bg-gray-50 cursor-pointer" onclick="viewCandidate(\${c.id})">
           <td class="py-3 font-medium text-gray-800">\${c.name}</td>
           <td class="py-3 text-gray-600">\${c.expectedPosition || '-'}</td>
           <td class="py-3">\${c.highestEducation || '-'}</td>
@@ -2156,8 +2158,8 @@ async function renderAnalytics() {
   \`).join('')
 
   // 技能排行
-  if (stats.topSkills) {
-    const maxSkillCount = Math.max(...stats.topSkills.map(s => s.count))
+  if (stats.topSkills && stats.topSkills.length > 0) {
+    const maxSkillCount = Math.max(...stats.topSkills.map(s => s.count)) || 1
     document.getElementById('skillRanking').innerHTML = stats.topSkills.map((s, i) => \`
       <div class="flex items-center gap-3">
         <span class="w-6 h-6 \${i < 3 ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'} rounded-full flex items-center justify-center text-xs font-bold">\${i+1}</span>
