@@ -86,25 +86,20 @@ upload.post('/resume', async (c) => {
     })
     
     try {
-      // 提取文本内容
-      let resumeText = await extractTextFromFile(
-        fileBuffer, 
-        file.name, 
+      // 提取文本内容（PDF/图片走 Vision，TXT 直接解码，DOCX 提取 XML 文本）
+      const resumeText = await extractTextFromFile(
+        fileBuffer,
+        file.name,
         file.type,
         apiKey,
         apiBaseUrl
       )
-      
-      if (!resumeText || resumeText.trim().length < 20) {
-        // 尝试直接作为文本读取
-        resumeText = new TextDecoder('utf-8', { fatal: false }).decode(fileBuffer)
-      }
 
       if (!resumeText || resumeText.trim().length < 10) {
         db.updateParseTask(task.id!, { status: 'failed', errorMsg: '无法提取文件文本内容' })
-        return c.json({ 
-          success: false, 
-          message: '无法从文件中提取文本内容，请确保文件不是加密的PDF或不可读的图片' 
+        return c.json({
+          success: false,
+          message: '无法从文件中提取有效内容。PDF请确保非扫描件或加密文件；图片请保证文字清晰。'
         }, 400)
       }
 
@@ -163,10 +158,20 @@ upload.post('/resume', async (c) => {
     
   } catch (e: any) {
     console.error('简历解析错误:', e)
-    return c.json({ 
-      success: false, 
-      message: `简历解析失败: ${e.message || '未知错误'}` 
-    }, 500)
+    const msg: string = e.message || '未知错误'
+    let friendlyMsg = `简历解析失败: ${msg}`
+    if (msg.includes('401') || msg.includes('invalid_api_key') || msg.includes('Incorrect API key')) {
+      friendlyMsg = 'API Key 无效或已过期，请在系统设置 → AI配置中重新填写正确的 OpenAI API Key。'
+    } else if (msg.includes('429') || msg.includes('rate_limit')) {
+      friendlyMsg = 'OpenAI 请求频率超限，请稍后再试（当前 API Key 配额不足）。'
+    } else if (msg.includes('quota') || msg.includes('insufficient_quota')) {
+      friendlyMsg = 'OpenAI API 余额不足，请充值后再试。'
+    } else if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) {
+      friendlyMsg = '请求超时，请检查网络连接或 API Base URL 是否正确。'
+    } else if (msg.includes('model') && msg.includes('not found')) {
+      friendlyMsg = '模型不存在，当前使用 gpt-4o，请确认 API Key 有权限访问该模型。'
+    }
+    return c.json({ success: false, message: friendlyMsg }, 500)
   }
 })
 
@@ -210,10 +215,16 @@ upload.post('/text', async (c) => {
     })
     
   } catch (e: any) {
-    return c.json({ 
-      success: false, 
-      message: `解析失败: ${e.message}` 
-    }, 500)
+    const msg: string = e.message || '未知错误'
+    let friendlyMsg = `解析失败: ${msg}`
+    if (msg.includes('401') || msg.includes('invalid_api_key') || msg.includes('Incorrect API key')) {
+      friendlyMsg = 'API Key 无效或已过期，请在系统设置 → AI配置中重新填写正确的 OpenAI API Key。'
+    } else if (msg.includes('429') || msg.includes('rate_limit')) {
+      friendlyMsg = 'OpenAI 请求频率超限，请稍后再试。'
+    } else if (msg.includes('quota') || msg.includes('insufficient_quota')) {
+      friendlyMsg = 'OpenAI API 余额不足，请充值后再试。'
+    }
+    return c.json({ success: false, message: friendlyMsg }, 500)
   }
 })
 
