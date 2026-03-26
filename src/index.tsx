@@ -620,38 +620,30 @@ async function renderDashboard() {
 }
 
 // ==========================================
-// 页面：人才库（列表+搜索）
+// 页面：人才库（左右分栏：列表+预览）
 // ==========================================
 async function renderCandidateList(params = {}) {
   if (params.skillKeyword) state.searchParams = { ...state.searchParams, skillKeyword: params.skillKeyword, keyword: '' }
-  
+  // 重置预览状态
+  window._previewCandidateId = null
+
   document.getElementById('mainContent').innerHTML = \`
-    <div class="p-6">
-      <div class="mb-6 flex justify-between items-center">
-        <div>
-          <h2 class="text-2xl font-bold text-gray-800">人才库</h2>
-          <p class="text-gray-500 text-sm mt-1">管理所有候选人档案与筛选</p>
+    <div class="flex flex-col h-full" style="height:calc(100vh - 56px)">
+      <!-- 顶部工具栏 -->
+      <div class="flex-shrink-0 px-4 pt-4 pb-3 flex flex-wrap gap-3 items-center bg-white border-b border-gray-100">
+        <div class="flex items-center gap-2 mr-auto">
+          <h2 class="text-lg font-bold text-gray-800">人才库</h2>
+          <span id="candidateCountBadge" class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">-</span>
         </div>
-        <div class="flex gap-2">
-          <button onclick="showCreateCandidateModal()" class="border border-blue-300 text-blue-600 bg-white px-4 py-2.5 rounded-xl hover:bg-blue-50 transition flex items-center gap-2 text-sm font-medium">
-            <i class="fas fa-user-plus"></i>手动新增
-          </button>
-          <button onclick="navigateTo('upload')" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium">
-            <i class="fas fa-cloud-upload-alt"></i>导入简历
-          </button>
-        </div>
-      </div>
-      
-      <!-- 搜索筛选栏 -->
-      <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-4">
-        <div class="flex gap-3 flex-wrap">
-          <div class="flex-1 min-w-48 relative">
-            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-            <input type="text" id="searchKeyword" placeholder="搜索姓名、职位、邮箱..." value="\${state.searchParams.keyword || ''}"
-              class="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <div class="flex gap-2 flex-wrap">
+          <!-- 搜索框 -->
+          <div class="relative">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+            <input type="text" id="searchKeyword" placeholder="搜索姓名、职位..." value="\${state.searchParams.keyword || ''}"
+              class="pl-8 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
               onkeydown="if(event.key==='Enter') searchCandidates()">
           </div>
-          <select id="filterStatus" class="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchCandidates()">
+          <select id="filterStatus" class="border border-gray-200 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchCandidates()">
             <option value="">全部状态</option>
             <option value="active">活跃</option>
             <option value="interviewing">面试中</option>
@@ -659,14 +651,14 @@ async function renderCandidateList(params = {}) {
             <option value="rejected">已淘汰</option>
             <option value="blacklist">黑名单</option>
           </select>
-          <select id="filterEdu" class="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchCandidates()">
+          <select id="filterEdu" class="border border-gray-200 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchCandidates()">
             <option value="">全部学历</option>
             <option value="博士">博士</option>
             <option value="硕士">硕士</option>
             <option value="本科">本科</option>
             <option value="大专">大专</option>
           </select>
-          <select id="filterChannel" class="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchCandidates()">
+          <select id="filterChannel" class="border border-gray-200 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchCandidates()">
             <option value="">全部渠道</option>
             <option value="BOSS直聘">BOSS直聘</option>
             <option value="智联招聘">智联招聘</option>
@@ -675,67 +667,140 @@ async function renderCandidateList(params = {}) {
             <option value="校园招聘">校园招聘</option>
             <option value="内推">内推</option>
           </select>
-          <input type="text" id="filterSkill" placeholder="技能筛选" value="\${state.searchParams.skillKeyword || ''}"
-            class="border border-gray-200 rounded-xl px-3 py-2.5 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <input type="text" id="filterSkill" placeholder="技能" value="\${state.searchParams.skillKeyword || ''}"
+            class="border border-gray-200 rounded-xl px-2 py-2 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500"
             onkeydown="if(event.key==='Enter') searchCandidates()">
-          <button onclick="searchCandidates()" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm hover:bg-blue-700 transition flex items-center gap-2">
-            <i class="fas fa-search"></i>搜索
+          <button onclick="searchCandidates()" class="bg-blue-600 text-white px-3 py-2 rounded-xl text-sm hover:bg-blue-700 transition">
+            <i class="fas fa-search"></i>
           </button>
-          <button onclick="clearSearch()" class="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">
+          <button onclick="clearSearch()" class="border border-gray-200 text-gray-500 px-3 py-2 rounded-xl text-sm hover:bg-gray-50 transition" title="清除筛选">
             <i class="fas fa-times"></i>
+          </button>
+          <button onclick="showCreateCandidateModal()" class="border border-blue-200 text-blue-600 px-3 py-2 rounded-xl text-sm hover:bg-blue-50 transition" title="手动新增">
+            <i class="fas fa-user-plus"></i>
+          </button>
+          <button onclick="navigateTo('upload')" class="bg-blue-600 text-white px-3 py-2 rounded-xl text-sm hover:bg-blue-700 transition" title="导入简历">
+            <i class="fas fa-cloud-upload-alt"></i>
           </button>
         </div>
       </div>
-      
-      <!-- 候选人列表 -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100" id="candidateListContainer">
-        <div class="text-center py-12 text-gray-400">
-          <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-          <p>加载中...</p>
+
+      <!-- 左右分栏主体 -->
+      <div class="flex flex-1 overflow-hidden">
+        <!-- 左侧：候选人列表 -->
+        <div class="w-80 flex-shrink-0 border-r border-gray-100 flex flex-col bg-white overflow-hidden">
+          <!-- 排序栏 -->
+          <div class="px-3 py-2 border-b border-gray-50 flex justify-between items-center flex-shrink-0">
+            <span id="listCountLabel" class="text-xs text-gray-400">加载中...</span>
+            <select class="text-xs border border-gray-200 rounded-lg px-2 py-1" onchange="changeSortBy(this.value)">
+              <option value="createdAt-desc">最新添加</option>
+              <option value="matchScore-desc">匹配分数</option>
+              <option value="yearsOfExperience-desc">工作年限</option>
+              <option value="name-asc">姓名排序</option>
+            </select>
+          </div>
+          <!-- 滚动列表 -->
+          <div class="flex-1 overflow-y-auto" id="candidateListContainer">
+            <div class="text-center py-12 text-gray-400">
+              <i class="fas fa-spinner fa-spin text-xl mb-2 block"></i>
+              <p class="text-sm">加载中...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：预览面板 -->
+        <div class="flex-1 overflow-hidden flex flex-col bg-gray-50" id="previewPanel">
+          <!-- 空状态 -->
+          <div id="previewEmpty" class="flex-1 flex flex-col items-center justify-center text-gray-300">
+            <i class="fas fa-hand-pointer text-5xl mb-4 opacity-30"></i>
+            <p class="text-base font-medium text-gray-400">点击左侧候选人</p>
+            <p class="text-sm text-gray-300 mt-1">预览简历原件与个人信息</p>
+          </div>
+          <!-- 预览内容区（点击后显示） -->
+          <div id="previewContent" class="hidden flex-1 flex flex-col overflow-hidden">
+            <!-- 预览头部 -->
+            <div id="previewHeader" class="flex-shrink-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
+            </div>
+            <!-- 预览主体（简历文件或信息） -->
+            <div id="previewBody" class="flex-1 overflow-hidden flex">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 面试记录弹窗 -->
+    <div id="interviewModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+        <h3 class="font-bold text-gray-800 text-lg mb-4">添加面试记录</h3>
+        <div class="space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <select id="itype" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="电话">电话面试</option>
+              <option value="视频">视频面试</option>
+              <option value="现场">现场面试</option>
+            </select>
+            <select id="iround" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="初筛">初筛</option>
+              <option value="一面">一面</option>
+              <option value="二面">二面</option>
+              <option value="HR面">HR面</option>
+              <option value="终面">终面</option>
+            </select>
+          </div>
+          <input type="datetime-local" id="idate" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="iinterviewer" placeholder="面试官姓名" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <select id="iresult" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="待定">待定</option>
+            <option value="通过">通过</option>
+            <option value="淘汰">淘汰</option>
+          </select>
+          <textarea id="ifeedback" placeholder="面试反馈..." rows="3" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+        <div class="flex gap-3 mt-4">
+          <button onclick="document.getElementById('interviewModal').classList.add('hidden')" class="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-gray-50">取消</button>
+          <button onclick="submitInterview()" class="flex-1 bg-blue-600 text-white py-2.5 rounded-xl text-sm hover:bg-blue-700">确认添加</button>
         </div>
       </div>
     </div>
   \`
-  
+
   // 恢复筛选状态
   setTimeout(() => {
     if (document.getElementById('filterStatus')) document.getElementById('filterStatus').value = state.searchParams.candidateStatus || ''
     if (document.getElementById('filterEdu')) document.getElementById('filterEdu').value = state.searchParams.highestEducation || ''
     if (document.getElementById('filterChannel')) document.getElementById('filterChannel').value = state.searchParams.sourceChannel || ''
   }, 0)
-  
+
   await loadAndRenderCandidates()
 }
 
 async function loadAndRenderCandidates() {
   const res = await loadCandidates()
-  
+
   const container = document.getElementById('candidateListContainer')
+  const countLabel = document.getElementById('listCountLabel')
+  const badge = document.getElementById('candidateCountBadge')
   if (!container) return
-  
+
   if (!res.success || state.candidates.length === 0) {
+    if (countLabel) countLabel.textContent = '暂无候选人'
+    if (badge) badge.textContent = '0'
     container.innerHTML = \`
-      <div class="text-center py-16 text-gray-400">
-        <i class="fas fa-search text-4xl mb-4 block"></i>
-        <p class="text-lg font-medium">未找到候选人</p>
-        <p class="text-sm mt-1">尝试调整筛选条件或<a onclick="navigateTo('upload')" class="text-blue-600 hover:underline cursor-pointer">导入简历</a></p>
+      <div class="text-center py-16 text-gray-400 px-4">
+        <i class="fas fa-search text-3xl mb-3 block"></i>
+        <p class="text-sm font-medium">未找到候选人</p>
+        <p class="text-xs mt-1">尝试调整筛选条件或<a onclick="navigateTo('upload')" class="text-blue-600 hover:underline cursor-pointer">导入简历</a></p>
       </div>
     \`
     return
   }
-  
+
   const totalPages = Math.ceil(state.totalCandidates / state.searchParams.pageSize)
-  
+  if (countLabel) countLabel.textContent = \`共 \${state.totalCandidates} 位\`
+  if (badge) badge.textContent = state.totalCandidates
+
   container.innerHTML = \`
-    <div class="p-4 border-b border-gray-50 flex justify-between items-center text-sm text-gray-500">
-      <span>共 <strong class="text-gray-800">\${state.totalCandidates}</strong> 位候选人</span>
-      <select class="border border-gray-200 rounded-lg px-2 py-1 text-sm" onchange="changeSortBy(this.value)">
-        <option value="createdAt-desc">最新添加</option>
-        <option value="matchScore-desc">匹配分数</option>
-        <option value="yearsOfExperience-desc">工作年限</option>
-        <option value="name-asc">姓名排序</option>
-      </select>
-    </div>
     <div class="divide-y divide-gray-50">
       \${state.candidates.map(c => renderCandidateRow(c)).join('')}
     </div>
@@ -744,42 +809,275 @@ async function loadAndRenderCandidates() {
 }
 
 function renderCandidateRow(c) {
-  const tags = (c.tags || []).slice(0, 3)
+  const tags = (c.tags || []).slice(0, 2)
+  const isSelected = window._previewCandidateId === c.id
   return \`
-    <div class="p-4 hover:bg-blue-50/30 cursor-pointer transition group" onclick="viewCandidate(\${c.id})">
-      <div class="flex items-start gap-4">
-        <div class="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+    <div class="px-3 py-2.5 cursor-pointer transition-colors border-l-2 \${isSelected ? 'bg-blue-50 border-blue-500' : 'border-transparent hover:bg-gray-50 hover:border-blue-200'}"
+      onclick="previewCandidate(\${c.id})" id="candidateRow-\${c.id}">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
           \${c.name?.charAt(0) || '?'}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-3 flex-wrap">
-            <span class="font-semibold text-gray-800 text-base">\${c.name}</span>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-semibold text-gray-800 text-sm">\${c.name}</span>
             \${getStatusBadge(c.candidateStatus)}
-            \${c.matchScore ? \`<span class="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full"><i class="fas fa-star text-orange-400"></i> \${c.matchScore}分</span>\` : ''}
           </div>
-          <div class="flex items-center gap-4 mt-1 text-sm text-gray-500 flex-wrap">
-            <span><i class="fas fa-briefcase mr-1 text-gray-300"></i>\${c.expectedPosition || '职位未知'}</span>
-            <span><i class="fas fa-graduation-cap mr-1 text-gray-300"></i>\${c.highestEducation || '-'}</span>
-            <span><i class="fas fa-clock mr-1 text-gray-300"></i>\${c.yearsOfExperience || 0}年经验</span>
-            <span><i class="fas fa-map-marker-alt mr-1 text-gray-300"></i>\${c.location || '-'}</span>
-            <span class="text-green-600"><i class="fas fa-yen-sign mr-1"></i>\${getSalaryText(c.expectedSalaryMin, c.expectedSalaryMax)}</span>
+          <div class="text-xs text-gray-400 mt-0.5 truncate">
+            \${c.expectedPosition || '职位未知'} · \${c.highestEducation || '-'} · \${c.yearsOfExperience || 0}年
           </div>
-          <div class="flex items-center gap-2 mt-2 flex-wrap">
-            \${tags.map(t => \`<span class="\${getTagClass(t.tagType)}">\${t.tagName}</span>\`).join('')}
-            \${c.sourceChannel ? \`<span class="text-xs text-gray-400 border border-gray-200 px-2 py-0.5 rounded-full"><i class="fas fa-paper-plane mr-1"></i>\${c.sourceChannel}</span>\` : ''}
-          </div>
+          \${tags.length ? \`<div class="flex gap-1 mt-1 flex-wrap">\${tags.map(t => \`<span class="\${getTagClass(t.tagType)} !text-[10px] !py-0">\${t.tagName}</span>\`).join('')}</div>\` : ''}
         </div>
-        <div class="flex flex-col gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
-          <button onclick="event.stopPropagation();viewCandidate(\${c.id})" class="text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg text-sm border border-blue-200 whitespace-nowrap">
-            <i class="fas fa-eye mr-1"></i>查看
-          </button>
-          <button onclick="event.stopPropagation();showEditCandidateModal(\${c.id})" class="text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm border border-gray-200 whitespace-nowrap">
-            <i class="fas fa-edit mr-1"></i>编辑
-          </button>
-        </div>
+        \${c.matchScore ? \`<div class="flex-shrink-0 text-right"><span class="text-xs text-orange-500 font-medium">\${c.matchScore}</span><div class="text-[9px] text-gray-300">分</div></div>\` : ''}
       </div>
     </div>
   \`
+}
+
+// 左侧点击 → 右侧预览（不跳转详情页）
+async function previewCandidate(id) {
+  // 高亮选中行
+  if (window._previewCandidateId) {
+    const prev = document.getElementById(\`candidateRow-\${window._previewCandidateId}\`)
+    if (prev) {
+      prev.classList.remove('bg-blue-50', 'border-blue-500')
+      prev.classList.add('border-transparent')
+    }
+  }
+  window._previewCandidateId = id
+  const row = document.getElementById(\`candidateRow-\${id}\`)
+  if (row) {
+    row.classList.add('bg-blue-50', 'border-blue-500')
+    row.classList.remove('border-transparent', 'hover:border-blue-200')
+  }
+
+  // 显示预览区
+  document.getElementById('previewEmpty')?.classList.add('hidden')
+  document.getElementById('previewContent')?.classList.remove('hidden')
+  document.getElementById('previewContent')?.classList.add('flex')
+
+  // 先加载头部（候选人基础信息）
+  const res = await apiRequest(\`/api/candidates/\${id}\`)
+  if (!res.success) { showToast('加载失败', 'error'); return }
+  const c = res.data
+
+  // 渲染预览头部
+  const header = document.getElementById('previewHeader')
+  if (header) {
+    header.innerHTML = \`
+      <div class="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0">
+        \${c.name?.charAt(0) || '?'}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold text-gray-800">\${c.name}</span>
+          \${getStatusBadge(c.candidateStatus)}
+          \${c.matchScore ? \`<span class="text-xs text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full"><i class="fas fa-star text-orange-400"></i> \${c.matchScore}分</span>\` : ''}
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">
+          \${[c.expectedPosition, c.highestEducation, c.yearsOfExperience ? c.yearsOfExperience+'年经验' : '', c.location].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick="showAddInterviewModal(\${c.id})" class="text-xs border border-blue-200 text-blue-600 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition whitespace-nowrap">
+          <i class="fas fa-calendar-plus mr-1"></i>面试
+        </button>
+        <button onclick="showEditCandidateModal(\${c.id})" class="text-xs border border-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg hover:bg-gray-50 transition whitespace-nowrap">
+          <i class="fas fa-edit mr-1"></i>编辑
+        </button>
+        <button onclick="viewCandidate(\${c.id})" class="text-xs bg-blue-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-blue-700 transition whitespace-nowrap">
+          <i class="fas fa-external-link-alt mr-1"></i>完整档案
+        </button>
+      </div>
+    \`
+  }
+
+  // 渲染预览主体：左侧信息摘要 + 右侧简历文件
+  const body = document.getElementById('previewBody')
+  if (body) {
+    body.innerHTML = \`
+      <!-- 左侧信息摘要 -->
+      <div class="w-56 flex-shrink-0 overflow-y-auto border-r border-gray-100 bg-white p-3 space-y-3 text-sm">
+        <!-- 联系方式 -->
+        \${c.phone || c.email ? \`
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">联系方式</p>
+          \${c.phone ? \`<p class="text-gray-600 text-xs flex items-center gap-1.5"><i class="fas fa-phone text-gray-300 w-3"></i>\${c.phone}</p>\` : ''}
+          \${c.email ? \`<p class="text-gray-600 text-xs flex items-center gap-1.5 mt-0.5 break-all"><i class="fas fa-envelope text-gray-300 w-3"></i>\${c.email}</p>\` : ''}
+          \${c.location ? \`<p class="text-gray-600 text-xs flex items-center gap-1.5 mt-0.5"><i class="fas fa-map-marker-alt text-gray-300 w-3"></i>\${c.location}</p>\` : ''}
+        </div>\` : ''}
+
+        <!-- 薪资期望 -->
+        \${(c.expectedSalaryMin || c.expectedSalaryMax) ? \`
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">薪资期望</p>
+          <p class="text-green-600 font-medium text-xs">\${getSalaryText(c.expectedSalaryMin, c.expectedSalaryMax)}</p>
+        </div>\` : ''}
+
+        <!-- AI标签 -->
+        \${c.tags?.length ? \`
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">AI标签</p>
+          <div class="flex flex-wrap gap-1">
+            \${c.tags.slice(0,6).map(t => \`<span class="\${getTagClass(t.tagType)} !text-[10px]">\${t.tagName}</span>\`).join('')}
+          </div>
+        </div>\` : ''}
+
+        <!-- 技能 -->
+        \${c.skills?.length ? \`
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">专业技能</p>
+          <div class="space-y-1.5">
+            \${c.skills.slice(0, 6).map(s => \`
+              <div>
+                <div class="flex justify-between items-center mb-0.5">
+                  <span class="text-xs text-gray-700">\${s.skillName}</span>
+                  <span class="text-[10px] text-gray-400">\${s.proficiency || ''}</span>
+                </div>
+                <div class="h-1 bg-gray-100 rounded-full">
+                  <div class="h-full bg-blue-400 rounded-full" style="width:\${s.proficiency==='精通'?90:s.proficiency==='熟练'?70:50}%"></div>
+                </div>
+              </div>
+            \`).join('')}
+          </div>
+        </div>\` : ''}
+
+        <!-- 教育背景 -->
+        \${c.educations?.length ? \`
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">教育背景</p>
+          \${c.educations.map(e => \`
+            <div class="border-l-2 border-blue-200 pl-2 mb-2">
+              <p class="text-xs font-medium text-gray-800">\${e.schoolName}</p>
+              <p class="text-[10px] text-blue-600">\${e.degree} · \${e.major}</p>
+              <p class="text-[10px] text-gray-400">\${e.startDate || ''} - \${e.endDate || ''}</p>
+            </div>
+          \`).join('')}
+        </div>\` : ''}
+
+        <!-- 工作经历摘要 -->
+        \${c.workExperiences?.length ? \`
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">工作经历</p>
+          \${c.workExperiences.slice(0,3).map(w => \`
+            <div class="mb-2">
+              <p class="text-xs font-medium text-gray-800">\${w.companyName}</p>
+              <p class="text-[10px] text-blue-600">\${w.position}</p>
+              <p class="text-[10px] text-gray-400">\${w.startDate || ''} - \${w.isCurrent ? '至今' : (w.endDate || '')}</p>
+            </div>
+          \`).join('')}
+        </div>\` : ''}
+
+        <!-- 自我评价 -->
+        \${c.selfEvaluation ? \`
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">自我评价</p>
+          <p class="text-xs text-gray-600 leading-relaxed line-clamp-4">\${c.selfEvaluation}</p>
+        </div>\` : ''}
+
+        <!-- 渠道/来源 -->
+        \${c.sourceChannel ? \`
+        <div class="pt-2 border-t border-gray-50">
+          <p class="text-[10px] text-gray-400"><i class="fas fa-paper-plane mr-1"></i>来源: \${c.sourceChannel}</p>
+          <p class="text-[10px] text-gray-400 mt-0.5"><i class="fas fa-clock mr-1"></i>导入: \${formatDate(c.createdAt)}</p>
+        </div>\` : ''}
+      </div>
+
+      <!-- 右侧简历文件预览 -->
+      <div class="flex-1 overflow-hidden flex flex-col bg-gray-100" id="resumePreviewZone-\${c.id}">
+        <div class="flex-1 flex items-center justify-center">
+          <div class="text-center text-gray-300">
+            <i class="fas fa-spinner fa-spin text-2xl mb-2 block"></i>
+            <p class="text-sm">加载简历文件...</p>
+          </div>
+        </div>
+      </div>
+    \`
+    // 异步加载简历文件到右侧预览区
+    loadResumePreviewZone(c.id)
+  }
+}
+
+// 在右侧预览区渲染简历文件（内嵌，不弹窗）
+async function loadResumePreviewZone(candidateId) {
+  const zone = document.getElementById(\`resumePreviewZone-\${candidateId}\`)
+  if (!zone) return
+  try {
+    const res = await apiRequest(\`/api/candidates/\${candidateId}/resume/info\`)
+    if (!res.hasFile) {
+      zone.innerHTML = \`
+        <div class="flex-1 flex flex-col items-center justify-center text-gray-300 p-6">
+          <i class="fas fa-file-upload text-4xl mb-3 opacity-40"></i>
+          <p class="text-sm text-gray-400 font-medium mb-1">暂无简历原件</p>
+          <p class="text-xs text-gray-300 mb-4">上传 PDF 或图片格式的简历</p>
+          <label class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 rounded-lg inline-flex items-center gap-1.5 transition">
+            <i class="fas fa-upload"></i>上传简历
+            <input type="file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+              onchange="uploadResumeFile(\${candidateId}, this)">
+          </label>
+        </div>
+      \`
+    } else {
+      const f = res.data
+      const isImage = f.fileType?.startsWith('image/')
+      const isPdf = f.fileType === 'application/pdf' || f.fileName?.toLowerCase().endsWith('.pdf')
+      const iconClass = isPdf ? 'fa-file-pdf text-red-400' : isImage ? 'fa-file-image text-green-400' : 'fa-file-word text-blue-400'
+      const sizeText = f.fileSize > 1024*1024 ? (f.fileSize/1024/1024).toFixed(1)+' MB' : (f.fileSize/1024).toFixed(0)+' KB'
+      const previewUrl = \`/api/candidates/\${candidateId}/resume\`
+
+      if (isPdf || isImage) {
+        // 直接内嵌预览
+        zone.innerHTML = \`
+          <div class="flex-shrink-0 bg-white border-b border-gray-200 px-3 py-2 flex items-center gap-2 text-xs text-gray-500">
+            <i class="fas \${iconClass}"></i>
+            <span class="flex-1 truncate font-medium text-gray-700">\${f.fileName}</span>
+            <span class="text-gray-400">\${sizeText}</span>
+            <a href="\${previewUrl}?download=1" download="\${f.fileName}"
+              class="ml-1 text-blue-600 hover:text-blue-700 flex items-center gap-1">
+              <i class="fas fa-download"></i>下载
+            </a>
+            <label class="ml-1 text-orange-500 hover:text-orange-600 flex items-center gap-1 cursor-pointer">
+              <i class="fas fa-sync-alt"></i>替换
+              <input type="file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                onchange="uploadResumeFile(\${candidateId}, this)">
+            </label>
+          </div>
+          <div class="flex-1 overflow-hidden bg-gray-800 flex items-center justify-center">
+            \${isImage
+              ? \`<img src="\${previewUrl}" class="max-w-full max-h-full object-contain" style="max-height:calc(100vh - 160px)">\`
+              : \`<iframe src="\${previewUrl}" class="w-full h-full border-0" style="min-height:0"></iframe>\`
+            }
+          </div>
+        \`
+        zone.classList.add('flex', 'flex-col')
+      } else {
+        // 不可预览的格式（如 Word）
+        zone.innerHTML = \`
+          <div class="flex-1 flex flex-col items-center justify-center text-gray-300 p-6">
+            <div class="w-16 h-16 bg-white rounded-2xl border border-gray-200 flex items-center justify-center mb-4 shadow-sm">
+              <i class="fas \${iconClass} text-3xl"></i>
+            </div>
+            <p class="text-sm text-gray-700 font-medium mb-1">\${f.fileName}</p>
+            <p class="text-xs text-gray-400 mb-4">\${sizeText} · \${formatDate(f.uploadedAt)}</p>
+            <p class="text-xs text-gray-300 mb-4">该格式暂不支持在线预览</p>
+            <div class="flex gap-2">
+              <a href="\${previewUrl}?download=1" download="\${f.fileName}"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 rounded-lg flex items-center gap-1.5">
+                <i class="fas fa-download"></i>下载查看
+              </a>
+              <label class="border border-orange-200 text-orange-600 hover:bg-orange-50 text-xs px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer">
+                <i class="fas fa-sync-alt"></i>替换文件
+                <input type="file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                  onchange="uploadResumeFile(\${candidateId}, this)">
+              </label>
+            </div>
+          </div>
+        \`
+      }
+    }
+  } catch(e) {
+    if (zone) zone.innerHTML = \`<div class="flex-1 flex items-center justify-center"><p class="text-xs text-red-400">加载失败</p></div>\`
+  }
 }
 
 function renderPagination(currentPage, totalPages) {
@@ -1258,7 +1556,12 @@ async function uploadResumeFile(candidateId, input) {
     
     if (data.success) {
       showToast('简历文件上传成功！', 'success')
-      loadResumeFileInfo(candidateId)
+      // 根据当前视图刷新不同区域
+      if (document.getElementById('resumeFileContent-' + candidateId)) {
+        loadResumeFileInfo(candidateId)
+      } else if (document.getElementById('resumePreviewZone-' + candidateId)) {
+        loadResumePreviewZone(candidateId)
+      }
     } else {
       showToast(data.message || '上传失败', 'error')
     }
@@ -1274,7 +1577,11 @@ async function deleteResumeFile(candidateId) {
   const res = await apiRequest(\`/api/candidates/\${candidateId}/resume\`, { method: 'DELETE' })
   if (res.success) {
     showToast('文件已删除', 'success')
-    loadResumeFileInfo(candidateId)
+    if (document.getElementById('resumeFileContent-' + candidateId)) {
+      loadResumeFileInfo(candidateId)
+    } else if (document.getElementById('resumePreviewZone-' + candidateId)) {
+      loadResumePreviewZone(candidateId)
+    }
   } else {
     showToast(res.message || '删除失败', 'error')
   }
@@ -1320,7 +1627,12 @@ async function submitInterview() {
   if (res.success) {
     showToast('面试记录添加成功', 'success')
     document.getElementById('interviewModal').classList.add('hidden')
-    viewCandidate(id)
+    // 在列表预览模式下刷新预览，在详情页模式下跳转详情
+    if (document.getElementById('previewPanel')) {
+      previewCandidate(id)
+    } else {
+      viewCandidate(id)
+    }
   } else {
     showToast(res.message, 'error')
   }
