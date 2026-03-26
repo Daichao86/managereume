@@ -17,12 +17,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(result)
 }
 
-type Bindings = {
-  OPENAI_API_KEY: string
-  OPENAI_BASE_URL: string
-}
-
-const candidates = new Hono<{ Bindings: Bindings }>()
+const candidates = new Hono()
 
 // GET /api/candidates - 获取候选人列表（支持搜索筛选）
 candidates.get('/', (c) => {

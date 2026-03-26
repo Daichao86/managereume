@@ -17,19 +17,14 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(result)
 }
 
-type Bindings = {
-  OPENAI_API_KEY: string
-  OPENAI_BASE_URL: string
-}
-
-const upload = new Hono<{ Bindings: Bindings }>()
+const upload = new Hono()
 
 // POST /api/upload/resume - 上传并AI解析简历
 upload.post('/resume', async (c) => {
   try {
     // 获取API Key：优先从请求头，其次从环境变量
-    const apiKey = c.req.header('X-OpenAI-Key') || c.env?.OPENAI_API_KEY || ''
-    const apiBaseUrl = c.req.header('X-OpenAI-Base-URL') || c.env?.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    const apiKey = c.req.header('X-OpenAI-Key') || process.env.OPENAI_API_KEY || ''
+    const apiBaseUrl = c.req.header('X-OpenAI-Base-URL') || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
     
     if (!apiKey) {
       return c.json({ 
@@ -178,8 +173,8 @@ upload.post('/resume', async (c) => {
 // POST /api/upload/text - 直接粘贴文本解析
 upload.post('/text', async (c) => {
   try {
-    const apiKey = c.req.header('X-OpenAI-Key') || c.env?.OPENAI_API_KEY || ''
-    const apiBaseUrl = c.req.header('X-OpenAI-Base-URL') || c.env?.OPENAI_BASE_URL || 'https://api.openai.com/v1'
+    const apiKey = c.req.header('X-OpenAI-Key') || process.env.OPENAI_API_KEY || ''
+    const apiBaseUrl = c.req.header('X-OpenAI-Base-URL') || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
     
     if (!apiKey) {
       return c.json({ 

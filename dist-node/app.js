@@ -1,39 +1,1598 @@
-// ==========================================
-// 简历人才管理系统 - 主入口
-// ==========================================
-import { Hono } from 'hono'
-import { cors } from 'hono/cors'
-import { serveStatic } from '@hono/node-server/serve-static'
-import candidates from './routes/candidates'
-import upload from './routes/upload'
-import users from './routes/users'
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serveStatic } from "@hono/node-server/serve-static";
+class MemoryDatabase {
+  candidates = /* @__PURE__ */ new Map();
+  educations = /* @__PURE__ */ new Map();
+  workExperiences = /* @__PURE__ */ new Map();
+  projects = /* @__PURE__ */ new Map();
+  skills = /* @__PURE__ */ new Map();
+  certifications = /* @__PURE__ */ new Map();
+  tags = /* @__PURE__ */ new Map();
+  interviews = /* @__PURE__ */ new Map();
+  parseTasks = /* @__PURE__ */ new Map();
+  // 简历文件独立存储（key = candidateId）
+  resumeFiles = /* @__PURE__ */ new Map();
+  // 系统用户
+  users = /* @__PURE__ */ new Map();
+  userIdCounter = 1;
+  candidateIdCounter = 1;
+  subIdCounter = 100;
+  constructor() {
+    this.seedDemoData();
+    this.seedDemoUsers();
+  }
+  seedDemoData() {
+    const demoData = [
+      {
+        name: "张伟",
+        gender: "男",
+        age: 28,
+        phone: "13800138001",
+        email: "zhangwei@email.com",
+        location: "北京市朝阳区",
+        hometown: "山东省济南市",
+        highestEducation: "本科",
+        yearsOfExperience: 5,
+        expectedPosition: "高级Java工程师",
+        expectedSalaryMin: 25e3,
+        expectedSalaryMax: 35e3,
+        expectedCity: "北京",
+        currentStatus: "在职",
+        candidateStatus: "active",
+        sourceChannel: "BOSS直聘",
+        matchScore: 92.5,
+        selfEvaluation: "5年Java开发经验，熟练掌握Spring Boot、MyBatis、Redis、MySQL等技术栈，有良好的代码规范和团队协作能力。",
+        createdAt: new Date(Date.now() - 864e5 * 2).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      {
+        name: "李娜",
+        gender: "女",
+        age: 26,
+        phone: "13900139002",
+        email: "lina@email.com",
+        location: "上海市浦东新区",
+        hometown: "浙江省杭州市",
+        highestEducation: "硕士",
+        yearsOfExperience: 3,
+        expectedPosition: "产品经理",
+        expectedSalaryMin: 2e4,
+        expectedSalaryMax: 3e4,
+        expectedCity: "上海",
+        currentStatus: "在职",
+        candidateStatus: "interviewing",
+        sourceChannel: "智联招聘",
+        matchScore: 88,
+        selfEvaluation: "3年互联网产品经验，擅长用户研究、数据分析，有成熟的产品思维和项目管理能力。",
+        createdAt: new Date(Date.now() - 864e5 * 5).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      {
+        name: "王强",
+        gender: "男",
+        age: 32,
+        phone: "13700137003",
+        email: "wangqiang@email.com",
+        location: "深圳市南山区",
+        hometown: "广东省广州市",
+        highestEducation: "本科",
+        yearsOfExperience: 8,
+        expectedPosition: "技术总监",
+        expectedSalaryMin: 4e4,
+        expectedSalaryMax: 6e4,
+        expectedCity: "深圳",
+        currentStatus: "离职",
+        candidateStatus: "active",
+        sourceChannel: "猎头推荐",
+        matchScore: 95,
+        selfEvaluation: "8年研发经验，曾带领50人技术团队，主导多个百万级用户产品从0到1的落地，擅长技术架构设计和团队管理。",
+        createdAt: new Date(Date.now() - 864e5 * 1).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      {
+        name: "陈晓雨",
+        gender: "女",
+        age: 24,
+        phone: "13600136004",
+        email: "chenxiaoyu@email.com",
+        location: "北京市海淀区",
+        hometown: "四川省成都市",
+        highestEducation: "本科",
+        yearsOfExperience: 1,
+        expectedPosition: "前端工程师",
+        expectedSalaryMin: 12e3,
+        expectedSalaryMax: 18e3,
+        expectedCity: "北京/上海",
+        currentStatus: "应届",
+        candidateStatus: "active",
+        sourceChannel: "校园招聘",
+        matchScore: 75.5,
+        selfEvaluation: "985高校计算机专业应届生，熟练掌握Vue.js、React、TypeScript，有多个实习和项目经验。",
+        createdAt: new Date(Date.now() - 864e5 * 10).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      {
+        name: "刘明",
+        gender: "男",
+        age: 30,
+        phone: "13500135005",
+        email: "liuming@email.com",
+        location: "杭州市西湖区",
+        hometown: "江苏省南京市",
+        highestEducation: "硕士",
+        yearsOfExperience: 6,
+        expectedPosition: "算法工程师",
+        expectedSalaryMin: 35e3,
+        expectedSalaryMax: 5e4,
+        expectedCity: "杭州/北京",
+        currentStatus: "在职",
+        candidateStatus: "active",
+        sourceChannel: "LinkedIn",
+        matchScore: 89,
+        selfEvaluation: "6年机器学习/深度学习经验，发表SCI论文3篇，在推荐系统、NLP领域有丰富的工程实践经验。",
+        createdAt: new Date(Date.now() - 864e5 * 7).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    ];
+    const demoEducations = {
+      1: [{ candidateId: 1, schoolName: "山东大学", degree: "本科", major: "计算机科学与技术", startDate: "2014-09", endDate: "2018-07", is985: true, is211: true, sortOrder: 0 }],
+      2: [
+        { candidateId: 2, schoolName: "复旦大学", degree: "硕士", major: "工商管理", startDate: "2019-09", endDate: "2021-07", is985: true, is211: true, sortOrder: 0 },
+        { candidateId: 2, schoolName: "上海交通大学", degree: "本科", major: "工业工程", startDate: "2015-09", endDate: "2019-07", is985: true, is211: true, sortOrder: 1 }
+      ],
+      3: [{ candidateId: 3, schoolName: "华南理工大学", degree: "本科", major: "软件工程", startDate: "2010-09", endDate: "2014-07", is985: true, is211: true, sortOrder: 0 }],
+      4: [{ candidateId: 4, schoolName: "北京航空航天大学", degree: "本科", major: "计算机科学", startDate: "2020-09", endDate: "2024-07", is985: true, is211: true, sortOrder: 0 }],
+      5: [
+        { candidateId: 5, schoolName: "浙江大学", degree: "硕士", major: "计算机应用技术", startDate: "2017-09", endDate: "2020-07", is985: true, is211: true, sortOrder: 0 },
+        { candidateId: 5, schoolName: "南京大学", degree: "本科", major: "数学与应用数学", startDate: "2013-09", endDate: "2017-07", is985: true, is211: true, sortOrder: 1 }
+      ]
+    };
+    const demoWorkExps = {
+      1: [
+        { candidateId: 1, companyName: "字节跳动", position: "Java工程师", industry: "互联网", companySize: "2000+", companyType: "上市公司", startDate: "2021-06", endDate: void 0, isCurrent: true, description: "负责抖音电商平台后端开发，主导设计订单系统微服务架构，QPS从1000提升至10000+", sortOrder: 0 },
+        { candidateId: 1, companyName: "滴滴出行", position: "Java开发工程师", industry: "互联网", companySize: "2000+", companyType: "上市公司", startDate: "2018-07", endDate: "2021-05", isCurrent: false, description: "负责出行订单系统开发，优化数据库查询性能，响应时间降低40%", sortOrder: 1 }
+      ],
+      2: [
+        { candidateId: 2, companyName: "阿里巴巴", position: "高级产品经理", industry: "互联网电商", companySize: "2000+", companyType: "上市公司", startDate: "2022-03", endDate: void 0, isCurrent: true, description: "负责淘宝商家运营产品线，管理DAU百万级产品，带领3人产品团队", sortOrder: 0 },
+        { candidateId: 2, companyName: "腾讯", position: "产品经理", industry: "互联网", companySize: "2000+", companyType: "上市公司", startDate: "2021-07", endDate: "2022-02", isCurrent: false, description: "负责微信小程序商业化产品设计，推动上线3个核心功能", sortOrder: 1 }
+      ],
+      3: [
+        { candidateId: 3, companyName: "华为技术", position: "技术总监", industry: "通信/互联网", companySize: "2000+", companyType: "上市公司", startDate: "2020-03", endDate: void 0, isCurrent: true, description: "带领30人研发团队，负责云计算平台核心模块研发", sortOrder: 0 },
+        { candidateId: 3, companyName: "百度", position: "高级研发工程师", industry: "互联网", companySize: "2000+", companyType: "上市公司", startDate: "2016-07", endDate: "2020-02", isCurrent: false, description: "负责搜索引擎索引构建系统，日处理数据量100TB+", sortOrder: 1 }
+      ],
+      4: [
+        { candidateId: 4, companyName: "美团", position: "前端实习生", industry: "互联网", companySize: "2000+", companyType: "上市公司", startDate: "2023-07", endDate: "2023-12", isCurrent: false, description: "参与美团外卖商家端小程序开发，独立完成2个功能模块", sortOrder: 0 }
+      ],
+      5: [
+        { candidateId: 5, companyName: "网易", position: "算法工程师", industry: "互联网", companySize: "2000+", companyType: "上市公司", startDate: "2020-07", endDate: void 0, isCurrent: true, description: "负责游戏推荐系统算法优化，CTR提升15%，用户留存率提升8%", sortOrder: 0 },
+        { candidateId: 5, companyName: "京东", position: "算法实习生", industry: "互联网电商", companySize: "2000+", companyType: "上市公司", startDate: "2019-07", endDate: "2020-06", isCurrent: false, description: "参与商品推荐系统建设，实现协同过滤推荐算法优化", sortOrder: 1 }
+      ]
+    };
+    const demoSkills = {
+      1: [
+        { candidateId: 1, skillName: "Java", proficiency: "精通", yearsUsed: 5, category: "编程语言" },
+        { candidateId: 1, skillName: "Spring Boot", proficiency: "精通", yearsUsed: 4, category: "框架" },
+        { candidateId: 1, skillName: "MySQL", proficiency: "熟练", yearsUsed: 5, category: "数据库" },
+        { candidateId: 1, skillName: "Redis", proficiency: "熟练", yearsUsed: 3, category: "中间件" },
+        { candidateId: 1, skillName: "Kafka", proficiency: "了解", yearsUsed: 2, category: "中间件" }
+      ],
+      2: [
+        { candidateId: 2, skillName: "Axure", proficiency: "精通", yearsUsed: 3, category: "工具" },
+        { candidateId: 2, skillName: "SQL", proficiency: "熟练", yearsUsed: 3, category: "数据库" },
+        { candidateId: 2, skillName: "数据分析", proficiency: "熟练", yearsUsed: 3, category: "技能" },
+        { candidateId: 2, skillName: "Python", proficiency: "了解", yearsUsed: 2, category: "编程语言" }
+      ],
+      3: [
+        { candidateId: 3, skillName: "Java", proficiency: "精通", yearsUsed: 8, category: "编程语言" },
+        { candidateId: 3, skillName: "微服务架构", proficiency: "精通", yearsUsed: 5, category: "架构" },
+        { candidateId: 3, skillName: "Kubernetes", proficiency: "熟练", yearsUsed: 4, category: "运维" },
+        { candidateId: 3, skillName: "团队管理", proficiency: "精通", yearsUsed: 6, category: "软技能" }
+      ],
+      4: [
+        { candidateId: 4, skillName: "Vue.js", proficiency: "熟练", yearsUsed: 2, category: "框架" },
+        { candidateId: 4, skillName: "React", proficiency: "熟练", yearsUsed: 1, category: "框架" },
+        { candidateId: 4, skillName: "TypeScript", proficiency: "熟练", yearsUsed: 2, category: "编程语言" },
+        { candidateId: 4, skillName: "CSS/Tailwind", proficiency: "精通", yearsUsed: 2, category: "前端" }
+      ],
+      5: [
+        { candidateId: 5, skillName: "Python", proficiency: "精通", yearsUsed: 6, category: "编程语言" },
+        { candidateId: 5, skillName: "TensorFlow", proficiency: "精通", yearsUsed: 4, category: "框架" },
+        { candidateId: 5, skillName: "PyTorch", proficiency: "熟练", yearsUsed: 3, category: "框架" },
+        { candidateId: 5, skillName: "推荐系统", proficiency: "精通", yearsUsed: 4, category: "领域" },
+        { candidateId: 5, skillName: "NLP", proficiency: "熟练", yearsUsed: 3, category: "领域" }
+      ]
+    };
+    const demoTags = {
+      1: [
+        { candidateId: 1, tagName: "Java开发", tagType: "skill", tagSource: "ai", confidence: 98 },
+        { candidateId: 1, tagName: "微服务", tagType: "skill", tagSource: "ai", confidence: 90 },
+        { candidateId: 1, tagName: "大厂背景", tagType: "trait", tagSource: "ai", confidence: 95 },
+        { candidateId: 1, tagName: "985高校", tagType: "education", tagSource: "ai", confidence: 100 }
+      ],
+      2: [
+        { candidateId: 2, tagName: "产品思维", tagType: "trait", tagSource: "ai", confidence: 92 },
+        { candidateId: 2, tagName: "数据驱动", tagType: "trait", tagSource: "ai", confidence: 88 },
+        { candidateId: 2, tagName: "985高校", tagType: "education", tagSource: "ai", confidence: 100 },
+        { candidateId: 2, tagName: "阿里系", tagType: "industry", tagSource: "ai", confidence: 100 }
+      ],
+      3: [
+        { candidateId: 3, tagName: "技术管理", tagType: "trait", tagSource: "ai", confidence: 95 },
+        { candidateId: 3, tagName: "架构设计", tagType: "skill", tagSource: "ai", confidence: 92 },
+        { candidateId: 3, tagName: "大厂背景", tagType: "trait", tagSource: "ai", confidence: 100 },
+        { candidateId: 3, tagName: "高潜力", tagType: "trait", tagSource: "ai", confidence: 88 }
+      ],
+      4: [
+        { candidateId: 4, tagName: "应届生", tagType: "education", tagSource: "ai", confidence: 100 },
+        { candidateId: 4, tagName: "前端开发", tagType: "skill", tagSource: "ai", confidence: 90 },
+        { candidateId: 4, tagName: "985高校", tagType: "education", tagSource: "ai", confidence: 100 }
+      ],
+      5: [
+        { candidateId: 5, tagName: "算法专家", tagType: "skill", tagSource: "ai", confidence: 95 },
+        { candidateId: 5, tagName: "机器学习", tagType: "skill", tagSource: "ai", confidence: 98 },
+        { candidateId: 5, tagName: "发表论文", tagType: "trait", tagSource: "ai", confidence: 100 },
+        { candidateId: 5, tagName: "985高校", tagType: "education", tagSource: "ai", confidence: 100 }
+      ]
+    };
+    demoData.forEach((data) => {
+      const id = this.candidateIdCounter++;
+      const candidate = { ...data, id, createdAt: data.createdAt, updatedAt: data.updatedAt };
+      this.candidates.set(id, candidate);
+    });
+    Object.entries(demoEducations).forEach(([cidStr, edus]) => {
+      const cid = parseInt(cidStr);
+      edus.forEach((edu) => {
+        const id = this.subIdCounter++;
+        this.educations.set(id, { ...edu, id, candidateId: cid });
+      });
+    });
+    Object.entries(demoWorkExps).forEach(([cidStr, exps]) => {
+      const cid = parseInt(cidStr);
+      exps.forEach((exp) => {
+        const id = this.subIdCounter++;
+        this.workExperiences.set(id, { ...exp, id, candidateId: cid });
+      });
+    });
+    Object.entries(demoSkills).forEach(([cidStr, skls]) => {
+      const cid = parseInt(cidStr);
+      skls.forEach((skill) => {
+        const id = this.subIdCounter++;
+        this.skills.set(id, { ...skill, id, candidateId: cid });
+      });
+    });
+    Object.entries(demoTags).forEach(([cidStr, tgs]) => {
+      const cid = parseInt(cidStr);
+      tgs.forEach((tag) => {
+        const id = this.subIdCounter++;
+        this.tags.set(id, { ...tag, id, candidateId: cid });
+      });
+    });
+  }
+  // ==========================================
+  // 演示用户初始化
+  // ==========================================
+  seedDemoUsers() {
+    const demoUsers = [
+      {
+        username: "admin",
+        realName: "系统管理员",
+        email: "admin@company.com",
+        phone: "13800000001",
+        role: "admin",
+        department: "技术部",
+        status: "active",
+        password: "admin123",
+        createdAt: new Date(Date.now() - 864e5 * 30).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      {
+        username: "hr_zhang",
+        realName: "张招聘",
+        email: "zhang.hr@company.com",
+        phone: "13800000002",
+        role: "hr",
+        department: "人力资源部",
+        status: "active",
+        password: "hr123456",
+        createdAt: new Date(Date.now() - 864e5 * 20).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      {
+        username: "interviewer_li",
+        realName: "李面试官",
+        email: "li.interview@company.com",
+        phone: "13800000003",
+        role: "interviewer",
+        department: "研发部",
+        status: "active",
+        password: "inter123",
+        createdAt: new Date(Date.now() - 864e5 * 10).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      {
+        username: "viewer_wang",
+        realName: "王只读",
+        email: "wang.view@company.com",
+        phone: "13800000004",
+        role: "viewer",
+        department: "业务部",
+        status: "disabled",
+        password: "view1234",
+        createdAt: new Date(Date.now() - 864e5 * 5).toISOString(),
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    ];
+    demoUsers.forEach((u) => {
+      const id = this.userIdCounter++;
+      this.users.set(id, { ...u, id });
+    });
+  }
+  // ==========================================
+  // 用户管理 CRUD
+  // ==========================================
+  getUsers(params = {}) {
+    let list = Array.from(this.users.values()).map((u) => {
+      const { password: _, ...safe } = u;
+      return safe;
+    });
+    if (params.keyword) {
+      const kw = params.keyword.toLowerCase();
+      list = list.filter(
+        (u) => u.username.toLowerCase().includes(kw) || u.realName.toLowerCase().includes(kw) || u.email.toLowerCase().includes(kw) || (u.department || "").toLowerCase().includes(kw)
+      );
+    }
+    if (params.role) list = list.filter((u) => u.role === params.role);
+    if (params.status) list = list.filter((u) => u.status === params.status);
+    list.sort((a, b) => (b.createdAt || "") > (a.createdAt || "") ? 1 : -1);
+    const total = list.length;
+    const page = params.page || 1;
+    const pageSize = params.pageSize || 20;
+    list = list.slice((page - 1) * pageSize, page * pageSize);
+    return { list, total };
+  }
+  getUserById(id) {
+    const u = this.users.get(id);
+    if (!u) return void 0;
+    const { password: _, ...safe } = u;
+    return safe;
+  }
+  getUserByUsername(username) {
+    return Array.from(this.users.values()).find((u) => u.username === username);
+  }
+  createUser(data) {
+    if (this.getUserByUsername(data.username)) {
+      return { error: `登录名 "${data.username}" 已存在` };
+    }
+    if (Array.from(this.users.values()).some((u) => u.email === data.email)) {
+      return { error: `邮箱 "${data.email}" 已被使用` };
+    }
+    const id = this.userIdCounter++;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const user = { ...data, id, status: data.status || "active", createdAt: now, updatedAt: now };
+    this.users.set(id, user);
+    const { password: _, ...safe } = user;
+    return { user: safe };
+  }
+  updateUser(id, data) {
+    const existing = this.users.get(id);
+    if (!existing) return { error: "用户不存在" };
+    if (data.username && data.username !== existing.username && this.getUserByUsername(data.username)) {
+      return { error: `登录名 "${data.username}" 已存在` };
+    }
+    if (data.email && data.email !== existing.email && Array.from(this.users.values()).some((u) => u.id !== id && u.email === data.email)) {
+      return { error: `邮箱 "${data.email}" 已被使用` };
+    }
+    const updated = { ...existing, ...data, id, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+    if (!data.password) updated.password = existing.password;
+    this.users.set(id, updated);
+    const { password: _, ...safe } = updated;
+    return { user: safe };
+  }
+  toggleUserStatus(id) {
+    const u = this.users.get(id);
+    if (!u) return { error: "用户不存在" };
+    return this.updateUser(id, { status: u.status === "active" ? "disabled" : "active" });
+  }
+  deleteUser(id) {
+    return this.users.delete(id);
+  }
+  getUserCount() {
+    return this.users.size;
+  }
+  // ==========================================
+  // 候选人操作
+  // ==========================================
+  getCandidates(params = {}) {
+    let list = Array.from(this.candidates.values());
+    if (params.keyword) {
+      const kw = params.keyword.toLowerCase();
+      list = list.filter(
+        (c) => c.name?.toLowerCase().includes(kw) || c.email?.toLowerCase().includes(kw) || c.phone?.includes(kw) || c.expectedPosition?.toLowerCase().includes(kw) || c.selfEvaluation?.toLowerCase().includes(kw) || c.location?.toLowerCase().includes(kw) || c.hrNotes?.toLowerCase().includes(kw)
+      );
+    }
+    if (params.name) {
+      const kw = params.name.toLowerCase();
+      list = list.filter((c) => c.name?.toLowerCase().includes(kw));
+    }
+    if (params.phone) {
+      list = list.filter((c) => c.phone?.includes(params.phone));
+    }
+    if (params.email) {
+      const kw = params.email.toLowerCase();
+      list = list.filter((c) => c.email?.toLowerCase().includes(kw));
+    }
+    if (params.gender) {
+      list = list.filter((c) => c.gender === params.gender);
+    }
+    if (params.minAge !== void 0 && params.minAge !== "") {
+      list = list.filter((c) => (c.age || 0) >= Number(params.minAge));
+    }
+    if (params.maxAge !== void 0 && params.maxAge !== "") {
+      list = list.filter((c) => (c.age || 0) <= Number(params.maxAge));
+    }
+    if (params.location) {
+      const kw = params.location.toLowerCase();
+      list = list.filter((c) => c.location?.toLowerCase().includes(kw));
+    }
+    if (params.expectedPosition) {
+      const kw = params.expectedPosition.toLowerCase();
+      list = list.filter((c) => c.expectedPosition?.toLowerCase().includes(kw));
+    }
+    if (params.expectedCity) {
+      const kw = params.expectedCity.toLowerCase();
+      list = list.filter((c) => c.expectedCity?.toLowerCase().includes(kw));
+    }
+    if (params.currentStatus) {
+      list = list.filter((c) => c.currentStatus === params.currentStatus);
+    }
+    if (params.candidateStatus) {
+      list = list.filter((c) => c.candidateStatus === params.candidateStatus);
+    }
+    if (params.highestEducation) {
+      list = list.filter((c) => c.highestEducation === params.highestEducation);
+    }
+    if (params.sourceChannel) {
+      list = list.filter((c) => c.sourceChannel === params.sourceChannel);
+    }
+    if (params.minExperience !== void 0 && params.minExperience !== "") {
+      list = list.filter((c) => (c.yearsOfExperience || 0) >= Number(params.minExperience));
+    }
+    if (params.maxExperience !== void 0 && params.maxExperience !== "") {
+      list = list.filter((c) => (c.yearsOfExperience || 0) <= Number(params.maxExperience));
+    }
+    if (params.minSalary !== void 0 && params.minSalary !== "") {
+      list = list.filter((c) => c.expectedSalaryMax === void 0 || (c.expectedSalaryMax || 0) >= Number(params.minSalary));
+    }
+    if (params.maxSalary !== void 0 && params.maxSalary !== "") {
+      list = list.filter((c) => (c.expectedSalaryMin || 0) <= Number(params.maxSalary));
+    }
+    if (params.minMatchScore !== void 0 && params.minMatchScore !== "") {
+      list = list.filter((c) => (c.matchScore || 0) >= Number(params.minMatchScore));
+    }
+    if (params.hasResume === "true" || params.hasResume === true) {
+      const idsWithResume = new Set(Array.from(this.resumeFiles.keys()));
+      list = list.filter((c) => c.id !== void 0 && idsWithResume.has(c.id));
+    } else if (params.hasResume === "false" || params.hasResume === false) {
+      const idsWithResume = new Set(Array.from(this.resumeFiles.keys()));
+      list = list.filter((c) => c.id !== void 0 && !idsWithResume.has(c.id));
+    }
+    if (params.isBlacklist !== void 0 && params.isBlacklist !== "") {
+      const val = params.isBlacklist === "true" || params.isBlacklist === true;
+      list = list.filter((c) => !!c.isBlacklist === val);
+    }
+    if (params.skillKeyword) {
+      const skillKws = params.skillKeyword.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+      skillKws.forEach((skillKw) => {
+        const candidateIdsWithSkill = /* @__PURE__ */ new Set();
+        this.skills.forEach((skill) => {
+          if (skill.skillName.toLowerCase().includes(skillKw) && skill.candidateId) {
+            candidateIdsWithSkill.add(skill.candidateId);
+          }
+        });
+        list = list.filter((c) => c.id && candidateIdsWithSkill.has(c.id));
+      });
+    }
+    if (params.companyKeyword) {
+      const kw = params.companyKeyword.toLowerCase();
+      const candidateIdsWithCompany = /* @__PURE__ */ new Set();
+      this.workExperiences.forEach((w) => {
+        if (w.companyName?.toLowerCase().includes(kw) && w.candidateId) {
+          candidateIdsWithCompany.add(w.candidateId);
+        }
+      });
+      list = list.filter((c) => c.id && candidateIdsWithCompany.has(c.id));
+    }
+    if (params.schoolKeyword) {
+      const kw = params.schoolKeyword.toLowerCase();
+      const candidateIdsWithSchool = /* @__PURE__ */ new Set();
+      this.educations.forEach((e) => {
+        if (e.schoolName?.toLowerCase().includes(kw) && e.candidateId) {
+          candidateIdsWithSchool.add(e.candidateId);
+        }
+      });
+      list = list.filter((c) => c.id && candidateIdsWithSchool.has(c.id));
+    }
+    if (params.majorKeyword) {
+      const kw = params.majorKeyword.toLowerCase();
+      const candidateIdsWithMajor = /* @__PURE__ */ new Set();
+      this.educations.forEach((e) => {
+        if (e.major?.toLowerCase().includes(kw) && e.candidateId) {
+          candidateIdsWithMajor.add(e.candidateId);
+        }
+      });
+      list = list.filter((c) => c.id && candidateIdsWithMajor.has(c.id));
+    }
+    if (params.industryKeyword) {
+      const kw = params.industryKeyword.toLowerCase();
+      const candidateIdsWithIndustry = /* @__PURE__ */ new Set();
+      this.workExperiences.forEach((w) => {
+        if (w.industry?.toLowerCase().includes(kw) && w.candidateId) {
+          candidateIdsWithIndustry.add(w.candidateId);
+        }
+      });
+      list = list.filter((c) => c.id && candidateIdsWithIndustry.has(c.id));
+    }
+    if (params.hrNotesKeyword) {
+      const kw = params.hrNotesKeyword.toLowerCase();
+      list = list.filter((c) => c.hrNotes?.toLowerCase().includes(kw));
+    }
+    const sortBy = params.sortBy || "createdAt";
+    const sortOrder = params.sortOrder || "desc";
+    list.sort((a, b) => {
+      let aVal = a[sortBy];
+      let bVal = b[sortBy];
+      if (aVal === void 0) aVal = "";
+      if (bVal === void 0) bVal = "";
+      const cmp = aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      return sortOrder === "desc" ? -cmp : cmp;
+    });
+    const total = list.length;
+    const page = params.page || 1;
+    const pageSize = params.pageSize || 10;
+    const start = (page - 1) * pageSize;
+    list = list.slice(start, start + pageSize);
+    list = list.map((c) => ({
+      ...c,
+      tags: Array.from(this.tags.values()).filter((t) => t.candidateId === c.id),
+      skills: Array.from(this.skills.values()).filter((s) => s.candidateId === c.id)
+    }));
+    return { list, total };
+  }
+  getCandidateById(id) {
+    const candidate = this.candidates.get(id);
+    if (!candidate) return void 0;
+    return {
+      ...candidate,
+      educations: Array.from(this.educations.values()).filter((e) => e.candidateId === id).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)),
+      workExperiences: Array.from(this.workExperiences.values()).filter((w) => w.candidateId === id).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)),
+      projects: Array.from(this.projects.values()).filter((p) => p.candidateId === id),
+      skills: Array.from(this.skills.values()).filter((s) => s.candidateId === id),
+      certifications: Array.from(this.certifications.values()).filter((c) => c.candidateId === id),
+      tags: Array.from(this.tags.values()).filter((t) => t.candidateId === id),
+      interviewRecords: Array.from(this.interviews.values()).filter((i) => i.candidateId === id)
+    };
+  }
+  createCandidate(data) {
+    const id = this.candidateIdCounter++;
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const candidate = {
+      ...data,
+      id,
+      createdAt: now,
+      updatedAt: now,
+      candidateStatus: data.candidateStatus || "active"
+    };
+    this.candidates.set(id, candidate);
+    if (data.educations) this.saveEducations(id, data.educations);
+    if (data.workExperiences) this.saveWorkExperiences(id, data.workExperiences);
+    if (data.projects) this.saveProjects(id, data.projects);
+    if (data.skills) this.saveSkills(id, data.skills);
+    if (data.certifications) this.saveCertifications(id, data.certifications);
+    if (data.tags) this.saveTags(id, data.tags);
+    return this.getCandidateById(id);
+  }
+  updateCandidate(id, data) {
+    const existing = this.candidates.get(id);
+    if (!existing) return void 0;
+    const updated = { ...existing, ...data, id, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+    this.candidates.set(id, updated);
+    if (data.educations !== void 0) {
+      this.clearEducations(id);
+      this.saveEducations(id, data.educations);
+    }
+    if (data.workExperiences !== void 0) {
+      this.clearWorkExperiences(id);
+      this.saveWorkExperiences(id, data.workExperiences);
+    }
+    if (data.skills !== void 0) {
+      this.clearSkills(id);
+      this.saveSkills(id, data.skills);
+    }
+    if (data.tags !== void 0) {
+      this.clearTags(id);
+      this.saveTags(id, data.tags);
+    }
+    return this.getCandidateById(id);
+  }
+  deleteCandidate(id) {
+    if (!this.candidates.has(id)) return false;
+    this.candidates.delete(id);
+    this.clearEducations(id);
+    this.clearWorkExperiences(id);
+    this.clearSkills(id);
+    this.clearTags(id);
+    Array.from(this.projects.entries()).forEach(([k, v]) => {
+      if (v.candidateId === id) this.projects.delete(k);
+    });
+    Array.from(this.certifications.entries()).forEach(([k, v]) => {
+      if (v.candidateId === id) this.certifications.delete(k);
+    });
+    Array.from(this.interviews.entries()).forEach(([k, v]) => {
+      if (v.candidateId === id) this.interviews.delete(k);
+    });
+    this.resumeFiles.delete(id);
+    return true;
+  }
+  clearEducations(candidateId) {
+    Array.from(this.educations.entries()).forEach(([k, v]) => {
+      if (v.candidateId === candidateId) this.educations.delete(k);
+    });
+  }
+  clearWorkExperiences(candidateId) {
+    Array.from(this.workExperiences.entries()).forEach(([k, v]) => {
+      if (v.candidateId === candidateId) this.workExperiences.delete(k);
+    });
+  }
+  clearSkills(candidateId) {
+    Array.from(this.skills.entries()).forEach(([k, v]) => {
+      if (v.candidateId === candidateId) this.skills.delete(k);
+    });
+  }
+  clearTags(candidateId) {
+    Array.from(this.tags.entries()).forEach(([k, v]) => {
+      if (v.candidateId === candidateId) this.tags.delete(k);
+    });
+  }
+  saveEducations(candidateId, items) {
+    items.forEach((item, i) => {
+      const id = this.subIdCounter++;
+      this.educations.set(id, { ...item, id, candidateId, sortOrder: i });
+    });
+  }
+  saveWorkExperiences(candidateId, items) {
+    items.forEach((item, i) => {
+      const id = this.subIdCounter++;
+      this.workExperiences.set(id, { ...item, id, candidateId, sortOrder: i });
+    });
+  }
+  saveProjects(candidateId, items) {
+    items.forEach((item, i) => {
+      const id = this.subIdCounter++;
+      this.projects.set(id, { ...item, id, candidateId, sortOrder: i });
+    });
+  }
+  saveSkills(candidateId, items) {
+    items.forEach((item) => {
+      const id = this.subIdCounter++;
+      this.skills.set(id, { ...item, id, candidateId });
+    });
+  }
+  saveCertifications(candidateId, items) {
+    items.forEach((item) => {
+      const id = this.subIdCounter++;
+      this.certifications.set(id, { ...item, id, candidateId });
+    });
+  }
+  saveTags(candidateId, items) {
+    items.forEach((item) => {
+      const id = this.subIdCounter++;
+      this.tags.set(id, { ...item, id, candidateId });
+    });
+  }
+  // 面试记录
+  addInterviewRecord(candidateId, data) {
+    const id = this.subIdCounter++;
+    const record = { ...data, id, candidateId, createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+    this.interviews.set(id, record);
+    return record;
+  }
+  // 解析任务
+  createParseTask(data) {
+    const id = this.subIdCounter++;
+    const task = { ...data, id, createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+    this.parseTasks.set(id, task);
+    return task;
+  }
+  updateParseTask(id, data) {
+    const existing = this.parseTasks.get(id);
+    if (existing) {
+      this.parseTasks.set(id, { ...existing, ...data, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    }
+  }
+  getParseTask(id) {
+    return this.parseTasks.get(id);
+  }
+  // ==========================================
+  // 简历文件操作
+  // ==========================================
+  /** 保存或替换候选人的简历文件（Base64） */
+  saveResumeFile(candidateId, file) {
+    const record = {
+      ...file,
+      candidateId,
+      uploadedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    this.resumeFiles.set(candidateId, record);
+    const candidate = this.candidates.get(candidateId);
+    if (candidate) {
+      this.candidates.set(candidateId, {
+        ...candidate,
+        resumeFileName: file.fileName,
+        resumeFileType: file.fileType,
+        resumeFileSize: file.fileSize,
+        resumeUploadedAt: record.uploadedAt,
+        updatedAt: record.uploadedAt
+      });
+    }
+    return record;
+  }
+  /** 获取候选人简历文件（含 Base64 数据） */
+  getResumeFile(candidateId) {
+    return this.resumeFiles.get(candidateId);
+  }
+  /** 删除候选人简历文件 */
+  deleteResumeFile(candidateId) {
+    if (!this.resumeFiles.has(candidateId)) return false;
+    this.resumeFiles.delete(candidateId);
+    const candidate = this.candidates.get(candidateId);
+    if (candidate) {
+      const c = { ...candidate };
+      delete c.resumeFileName;
+      delete c.resumeFileType;
+      delete c.resumeFileSize;
+      delete c.resumeUploadedAt;
+      this.candidates.set(candidateId, { ...c, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+    }
+    return true;
+  }
+  // 统计数据
+  getStatistics() {
+    const allCandidates = Array.from(this.candidates.values());
+    const total = allCandidates.length;
+    const byStatus = {};
+    const byEducation = {};
+    const byChannel = {};
+    const byExperience = { "0-2年": 0, "2-5年": 0, "5-10年": 0, "10年+": 0 };
+    allCandidates.forEach((c) => {
+      const status = c.candidateStatus || "active";
+      byStatus[status] = (byStatus[status] || 0) + 1;
+      const edu = c.highestEducation || "未知";
+      byEducation[edu] = (byEducation[edu] || 0) + 1;
+      const channel = c.sourceChannel || "其他";
+      byChannel[channel] = (byChannel[channel] || 0) + 1;
+      const exp = c.yearsOfExperience || 0;
+      if (exp < 2) byExperience["0-2年"]++;
+      else if (exp < 5) byExperience["2-5年"]++;
+      else if (exp < 10) byExperience["5-10年"]++;
+      else byExperience["10年+"]++;
+    });
+    const skillCount = {};
+    Array.from(this.skills.values()).forEach((s) => {
+      skillCount[s.skillName] = (skillCount[s.skillName] || 0) + 1;
+    });
+    const topSkills = Object.entries(skillCount).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count }));
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString();
+    const recentAdded = allCandidates.filter((c) => (c.createdAt || "") > thirtyDaysAgo).length;
+    return {
+      total,
+      recentAdded,
+      byStatus,
+      byEducation,
+      byChannel,
+      byExperience,
+      topSkills,
+      avgMatchScore: total > 0 ? Math.round(allCandidates.reduce((sum, c) => sum + (c.matchScore || 0), 0) / total * 10) / 10 : 0
+    };
+  }
+}
+const db = new MemoryDatabase();
+function arrayBufferToBase64$1(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let result = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    result += String.fromCharCode(...chunk);
+  }
+  return btoa(result);
+}
+const candidates = new Hono();
+candidates.get("/", (c) => {
+  const query = c.req.query();
+  const params = {
+    keyword: query.keyword,
+    candidateStatus: query.candidateStatus,
+    highestEducation: query.highestEducation,
+    sourceChannel: query.sourceChannel,
+    skillKeyword: query.skillKeyword,
+    minExperience: query.minExperience ? parseFloat(query.minExperience) : void 0,
+    maxExperience: query.maxExperience ? parseFloat(query.maxExperience) : void 0,
+    isBlacklist: query.isBlacklist === "true" ? true : query.isBlacklist === "false" ? false : void 0,
+    page: query.page ? parseInt(query.page) : 1,
+    pageSize: query.pageSize ? parseInt(query.pageSize) : 10,
+    sortBy: query.sortBy || "createdAt",
+    sortOrder: query.sortOrder || "desc"
+  };
+  const { list, total } = db.getCandidates(params);
+  return c.json({
+    success: true,
+    data: list,
+    total,
+    page: params.page,
+    pageSize: params.pageSize
+  });
+});
+candidates.get("/:id", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const candidate = db.getCandidateById(id);
+  if (!candidate) {
+    return c.json({ success: false, message: "候选人不存在" }, 404);
+  }
+  return c.json({ success: true, data: candidate });
+});
+candidates.post("/", async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body.name || body.name.trim() === "") {
+      return c.json({ success: false, message: "姓名不能为空" }, 400);
+    }
+    const candidate = db.createCandidate(body);
+    return c.json({ success: true, data: candidate, message: "候选人创建成功" }, 201);
+  } catch (e) {
+    return c.json({ success: false, message: `创建失败: ${e}` }, 500);
+  }
+});
+candidates.put("/:id", async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const body = await c.req.json();
+    const updated = db.updateCandidate(id, body);
+    if (!updated) {
+      return c.json({ success: false, message: "候选人不存在" }, 404);
+    }
+    return c.json({ success: true, data: updated, message: "更新成功" });
+  } catch (e) {
+    return c.json({ success: false, message: `更新失败: ${e}` }, 500);
+  }
+});
+candidates.patch("/:id/status", async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const { candidateStatus } = await c.req.json();
+    const validStatuses = ["active", "interviewing", "hired", "rejected", "blacklist"];
+    if (!validStatuses.includes(candidateStatus)) {
+      return c.json({ success: false, message: "无效的状态值" }, 400);
+    }
+    const updated = db.updateCandidate(id, {
+      candidateStatus,
+      isBlacklist: candidateStatus === "blacklist"
+    });
+    if (!updated) {
+      return c.json({ success: false, message: "候选人不存在" }, 404);
+    }
+    return c.json({ success: true, data: updated, message: "状态更新成功" });
+  } catch (e) {
+    return c.json({ success: false, message: `状态更新失败: ${e}` }, 500);
+  }
+});
+candidates.patch("/:id/notes", async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const { hrNotes } = await c.req.json();
+    const updated = db.updateCandidate(id, { hrNotes });
+    if (!updated) {
+      return c.json({ success: false, message: "候选人不存在" }, 404);
+    }
+    return c.json({ success: true, message: "备注更新成功" });
+  } catch (e) {
+    return c.json({ success: false, message: `备注更新失败: ${e}` }, 500);
+  }
+});
+candidates.delete("/:id", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const deleted = db.deleteCandidate(id);
+  if (!deleted) {
+    return c.json({ success: false, message: "候选人不存在" }, 404);
+  }
+  return c.json({ success: true, message: "删除成功" });
+});
+candidates.post("/:id/interviews", async (c) => {
+  try {
+    const candidateId = parseInt(c.req.param("id"));
+    const body = await c.req.json();
+    const record = db.addInterviewRecord(candidateId, { ...body, candidateId });
+    return c.json({ success: true, data: record, message: "面试记录添加成功" }, 201);
+  } catch (e) {
+    return c.json({ success: false, message: `添加失败: ${e}` }, 500);
+  }
+});
+candidates.get("/stats/overview", (c) => {
+  const stats = db.getStatistics();
+  return c.json({ success: true, data: stats });
+});
+candidates.get("/:id/resume", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const candidate = db.getCandidateById(id);
+  if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
+  const file = db.getResumeFile(id);
+  if (!file) return c.json({ success: false, message: "该候选人暂无上传的简历文件" }, 404);
+  const download = c.req.query("download") === "1";
+  const binaryStr = atob(file.fileData);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  const disposition = download ? `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}` : `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`;
+  return new Response(bytes.buffer, {
+    status: 200,
+    headers: {
+      "Content-Type": file.fileType || "application/octet-stream",
+      "Content-Disposition": disposition,
+      "Content-Length": String(bytes.length),
+      "Cache-Control": "private, no-cache"
+    }
+  });
+});
+candidates.get("/:id/resume/info", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const candidate = db.getCandidateById(id);
+  if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
+  const file = db.getResumeFile(id);
+  if (!file) return c.json({ success: false, hasFile: false, message: "暂无简历文件" });
+  return c.json({
+    success: true,
+    hasFile: true,
+    data: {
+      fileName: file.fileName,
+      fileType: file.fileType,
+      fileSize: file.fileSize,
+      uploadedAt: file.uploadedAt
+    }
+  });
+});
+candidates.post("/:id/resume", async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const candidate = db.getCandidateById(id);
+    if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
+    const formData = await c.req.formData();
+    const file = formData.get("file");
+    if (!file) return c.json({ success: false, message: "请选择要上传的文件" }, 400);
+    const allowedExts = ["pdf", "doc", "docx", "jpg", "jpeg", "png", "webp"];
+    const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
+    if (!allowedExts.includes(fileExt)) {
+      return c.json({ success: false, message: "仅支持 PDF、Word、JPG、PNG 格式" }, 400);
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return c.json({ success: false, message: "文件大小不能超过 10MB" }, 400);
+    }
+    const fileBuffer = await file.arrayBuffer();
+    const base64 = arrayBufferToBase64$1(fileBuffer);
+    db.saveResumeFile(id, {
+      fileName: file.name,
+      fileType: file.type || `application/${fileExt}`,
+      fileSize: file.size,
+      fileData: base64
+    });
+    return c.json({
+      success: true,
+      message: "简历文件上传成功",
+      data: {
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size
+      }
+    });
+  } catch (e) {
+    return c.json({ success: false, message: `上传失败: ${e.message}` }, 500);
+  }
+});
+candidates.delete("/:id/resume", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const deleted = db.deleteResumeFile(id);
+  if (!deleted) return c.json({ success: false, message: "文件不存在" }, 404);
+  return c.json({ success: true, message: "简历文件已删除" });
+});
+const PARSE_SYSTEM_PROMPT = `你是一个专业的简历解析AI助手。你需要从提供的简历文本中提取结构化信息。
 
-const app = new Hono()
+请严格按照以下JSON格式返回解析结果，所有字段都是可选的，没有找到的信息留空或使用合理的默认值：
 
-// 中间件
-app.use('/api/*', cors())
+{
+  "name": "姓名",
+  "gender": "性别(男/女)",
+  "age": 年龄数字或null,
+  "phone": "手机号",
+  "email": "邮箱",
+  "location": "现居城市",
+  "hometown": "籍贯",
+  "currentStatus": "求职状态(在职/离职/应届)",
+  "yearsOfExperience": 工作年限数字,
+  "highestEducation": "最高学历(博士/硕士/本科/大专/高中)",
+  "expectedSalaryMin": 期望薪资下限(元/月)数字或null,
+  "expectedSalaryMax": 期望薪资上限(元/月)数字或null,
+  "expectedPosition": "期望职位",
+  "expectedCity": "期望城市",
+  "selfEvaluation": "自我评价原文",
+  "linkedinUrl": "LinkedIn链接或null",
+  "githubUrl": "GitHub链接或null",
+  "educations": [
+    {
+      "schoolName": "学校名称",
+      "degree": "学历(博士/硕士/本科/大专/高中)",
+      "major": "专业",
+      "startDate": "开始时间(YYYY-MM格式)",
+      "endDate": "结束时间(YYYY-MM格式，在读填至今)",
+      "gpa": GPA数字或null,
+      "description": "在校描述",
+      "is985": true/false,
+      "is211": true/false,
+      "isOverseas": true/false
+    }
+  ],
+  "workExperiences": [
+    {
+      "companyName": "公司名称",
+      "position": "职位",
+      "industry": "行业",
+      "companySize": "公司规模(<50/50-200/200-500/500-2000/2000+)",
+      "companyType": "公司性质(国企/外企/民企/上市公司/初创)",
+      "department": "部门",
+      "startDate": "开始时间(YYYY-MM)",
+      "endDate": "结束时间(YYYY-MM，当前工作填null)",
+      "isCurrent": true/false,
+      "salary": 月薪数字或null,
+      "description": "工作描述",
+      "achievements": "工作成就"
+    }
+  ],
+  "projects": [
+    {
+      "projectName": "项目名称",
+      "role": "担任角色",
+      "startDate": "开始时间",
+      "endDate": "结束时间",
+      "techStack": "技术栈",
+      "description": "项目描述",
+      "achievements": "项目成果"
+    }
+  ],
+  "skills": [
+    {
+      "skillName": "技能名称",
+      "proficiency": "熟练程度(精通/熟练/了解)",
+      "yearsUsed": 使用年限数字或null,
+      "category": "类别(编程语言/框架/工具/数据库/中间件/其他)"
+    }
+  ],
+  "certifications": [
+    {
+      "certName": "证书名称",
+      "issuingOrg": "颁发机构",
+      "issueDate": "获得时间",
+      "certType": "类型(证书/奖项/荣誉)"
+    }
+  ],
+  "tags": [
+    {
+      "tagName": "标签名",
+      "tagType": "类型(skill/industry/trait/education/company)",
+      "confidence": 置信度0-100数字
+    }
+  ],
+  "summary": "对该候选人的3-5句话综合评述，包括其核心优势、背景亮点和适合的岗位方向"
+}
 
-// API路由
-app.route('/api/candidates', candidates)
-app.route('/api/upload', upload)
-app.route('/api/users', users)
+注意事项：
+1. 985/211院校判断：清华、北大、复旦、上交、浙大、中科大、南京大、武汉大、中山、哈工大、西交、南开、同济等为985
+2. 技能标签自动从工作描述、项目描述中提取，不仅限于技能列表
+3. 薪资如果是K结尾，转换为月薪元（如20K = 20000）
+4. 请确保返回有效的JSON格式，不要包含任何额外的说明文字`;
+async function parseResumeWithAI(resumeText, apiKey, apiBaseUrl = "https://api.openai.com/v1") {
+  const truncatedText = resumeText.slice(0, 8e3);
+  const response = await fetch(`${apiBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: PARSE_SYSTEM_PROMPT },
+        { role: "user", content: `请解析以下简历内容：
 
-// 统计数据API（快捷路由）
-app.get('/api/stats', (c) => {
-  return c.json({ success: true, message: 'use /api/candidates/stats/overview' })
-})
-
-// 静态文件服务
-app.use('/static/*', serveStatic({ root: './public' }))
-
-// 所有前端路由都返回 index.html（SPA模式）
-app.get('/', (c) => c.html(getIndexHtml()))
-app.get('/candidates', (c) => c.html(getIndexHtml()))
-app.get('/candidates/*', (c) => c.html(getIndexHtml()))
-app.get('/upload', (c) => c.html(getIndexHtml()))
-app.get('/analytics', (c) => c.html(getIndexHtml()))
-app.get('/settings', (c) => c.html(getIndexHtml()))
-
+${truncatedText}` }
+      ],
+      temperature: 0.1,
+      response_format: { type: "json_object" }
+    })
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`OpenAI API错误: ${response.status} - ${errText}`);
+  }
+  const result = await response.json();
+  const content = result.choices?.[0]?.message?.content;
+  if (!content) throw new Error("AI返回内容为空");
+  try {
+    const parsed = JSON.parse(content);
+    if (!parsed.tags) parsed.tags = [];
+    if (parsed.educations) {
+      parsed.educations.forEach((edu) => {
+        if (edu.is985) parsed.tags.push({ tagName: "985高校", tagType: "education", tagSource: "ai", confidence: 100 });
+        if (edu.is211 && !edu.is985) parsed.tags.push({ tagName: "211高校", tagType: "education", tagSource: "ai", confidence: 100 });
+        if (edu.isOverseas) parsed.tags.push({ tagName: "海外留学", tagType: "education", tagSource: "ai", confidence: 100 });
+      });
+    }
+    const bigCompanies = ["阿里", "腾讯", "百度", "字节", "美团", "京东", "华为", "网易", "滴滴", "拼多多", "小米", "Google", "Microsoft", "Amazon", "Meta", "Apple"];
+    if (parsed.workExperiences) {
+      parsed.workExperiences.forEach((exp) => {
+        bigCompanies.forEach((company) => {
+          if (exp.companyName?.includes(company)) {
+            parsed.tags.push({ tagName: "大厂背景", tagType: "trait", tagSource: "ai", confidence: 100 });
+          }
+        });
+      });
+    }
+    const tagSet = /* @__PURE__ */ new Set();
+    parsed.tags = parsed.tags.filter((tag) => {
+      if (tagSet.has(tag.tagName)) return false;
+      tagSet.add(tag.tagName);
+      return true;
+    });
+    return parsed;
+  } catch (e) {
+    throw new Error(`AI返回格式解析失败: ${e}`);
+  }
+}
+function safeArrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+async function extractTextFromFile(fileContent, fileName, mimeType, apiKey, apiBaseUrl = "https://api.openai.com/v1") {
+  const ext = fileName.toLowerCase().split(".").pop() || "";
+  if (["txt", "html", "htm"].includes(ext) || mimeType === "text/plain") {
+    return new TextDecoder("utf-8", { fatal: false }).decode(fileContent);
+  }
+  const imageExts = ["jpg", "jpeg", "png", "gif", "webp", "bmp"];
+  const imageMimes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp"];
+  if (imageExts.includes(ext) || imageMimes.includes(mimeType)) {
+    return await extractWithVision(fileContent, mimeType || `image/${ext}`, apiKey, apiBaseUrl);
+  }
+  if (ext === "pdf" || mimeType === "application/pdf") {
+    const extracted = extractTextFromPdfBinary(fileContent);
+    const usableChars = (extracted.match(/[\u4e00-\u9fff]|[A-Za-z]{2,}/g) || []).length;
+    if (usableChars >= 20) {
+      return extracted;
+    }
+    return await extractWithVision(fileContent, "application/pdf", apiKey, apiBaseUrl);
+  }
+  if (["doc", "docx"].includes(ext)) {
+    const extracted = extractTextFromDocxBinary(fileContent);
+    const usableChars = (extracted.match(/[\u4e00-\u9fff]|[A-Za-z]{2,}/g) || []).length;
+    if (usableChars >= 20) {
+      return extracted;
+    }
+    const fallbackMime = ext === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "application/msword";
+    return await extractWithVision(fileContent, fallbackMime, apiKey, apiBaseUrl);
+  }
+  const rawText = new TextDecoder("utf-8", { fatal: false }).decode(fileContent);
+  return rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, " ").replace(/\s+/g, " ").trim();
+}
+function extractTextFromPdfBinary(buffer) {
+  const raw = new TextDecoder("latin1").decode(buffer);
+  const texts = [];
+  const tjRegex = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*Tj/g;
+  let m;
+  while ((m = tjRegex.exec(raw)) !== null) {
+    const t = m[1].replace(/\\n/g, "\n").replace(/\\r/g, "").replace(/\\\(/g, "(").replace(/\\\)/g, ")");
+    texts.push(t);
+  }
+  const tjArrRegex = /\[([^\]]+)\]\s*TJ/g;
+  while ((m = tjArrRegex.exec(raw)) !== null) {
+    const inner = m[1];
+    const parts = inner.match(/\(([^)\\]*(?:\\.[^)\\]*)*)\)/g) || [];
+    parts.forEach((p) => texts.push(p.slice(1, -1)));
+  }
+  if (texts.length === 0) return "";
+  let result = texts.join(" ");
+  try {
+    const bytes = new Uint8Array(result.length);
+    for (let i = 0; i < result.length; i++) bytes[i] = result.charCodeAt(i);
+    const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    if ((utf8.match(/[\u4e00-\u9fff]/g) || []).length > 0) result = utf8;
+  } catch {
+  }
+  return result.replace(/\s+/g, " ").trim();
+}
+function extractTextFromDocxBinary(buffer) {
+  const raw = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+  const wtRegex = /<w:t[^>]*>([^<]+)<\/w:t>/g;
+  const texts = [];
+  let m;
+  while ((m = wtRegex.exec(raw)) !== null) {
+    texts.push(m[1]);
+  }
+  if (texts.length > 0) return texts.join(" ").replace(/\s+/g, " ").trim();
+  return raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+async function extractWithVision(fileData, mimeType, apiKey, apiBaseUrl) {
+  const base64 = safeArrayBufferToBase64(fileData);
+  const isPdf = mimeType === "application/pdf" || mimeType.includes("pdf");
+  const isWord = mimeType.includes("word") || mimeType.includes("document");
+  if (isPdf || isWord) {
+    const response2 = await fetch(`${apiBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "这是一份简历文件的base64内容。请从中提取所有可读的简历文字信息，包括姓名、联系方式、教育经历、工作经历、技能等，保持原有格式输出。如果无法识别，请返回空字符串。"
+            },
+            {
+              type: "image_url",
+              image_url: { url: `data:image/jpeg;base64,${base64}` }
+            }
+          ]
+        }],
+        max_tokens: 4e3
+      })
+    });
+    if (!response2.ok) {
+      const err = await response2.text();
+      throw new Error(`OpenAI API错误: ${response2.status} - ${err}`);
+    }
+    const result2 = await response2.json();
+    return result2.choices?.[0]?.message?.content || "";
+  }
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+  const response = await fetch(`${apiBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "请完整提取这张简历图片中的所有文字内容，保持原有格式，不要遗漏任何信息。" },
+          { type: "image_url", image_url: { url: dataUrl } }
+        ]
+      }],
+      max_tokens: 4e3
+    })
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI API错误: ${response.status} - ${err}`);
+  }
+  const result = await response.json();
+  return result.choices?.[0]?.message?.content || "";
+}
+function calculateProfileCompleteness(candidate) {
+  const fields = [
+    candidate.name,
+    candidate.phone,
+    candidate.email,
+    candidate.location,
+    candidate.highestEducation,
+    candidate.expectedPosition,
+    candidate.selfEvaluation,
+    candidate.yearsOfExperience
+  ];
+  const filled = fields.filter((f) => f !== void 0 && f !== null && f !== "").length;
+  let score = filled / fields.length * 60;
+  if (candidate.educations?.length > 0) score += 10;
+  if (candidate.workExperiences?.length > 0) score += 15;
+  if (candidate.skills?.length > 0) score += 10;
+  if (candidate.tags?.length > 0) score += 5;
+  return Math.min(100, Math.round(score));
+}
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let result = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    result += String.fromCharCode(...chunk);
+  }
+  return btoa(result);
+}
+const upload = new Hono();
+upload.post("/resume", async (c) => {
+  try {
+    const apiKey = c.req.header("X-OpenAI-Key") || process.env.OPENAI_API_KEY || "";
+    const apiBaseUrl = c.req.header("X-OpenAI-Base-URL") || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    if (!apiKey) {
+      return c.json({
+        success: false,
+        message: "OpenAI API Key未配置，请在系统设置中配置API Key"
+      }, 400);
+    }
+    const formData = await c.req.formData();
+    const file = formData.get("file");
+    const sourceChannel = formData.get("sourceChannel") || "手动上传";
+    if (!file) {
+      return c.json({ success: false, message: "请选择要上传的简历文件" }, 400);
+    }
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+      "text/html",
+      "image/jpeg",
+      "image/png",
+      "image/webp"
+    ];
+    const allowedExts = ["pdf", "doc", "docx", "txt", "html", "htm", "jpg", "jpeg", "png", "webp"];
+    const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
+    if (!allowedTypes.includes(file.type) && !allowedExts.includes(fileExt)) {
+      return c.json({
+        success: false,
+        message: `不支持的文件格式，请上传 PDF、Word、TXT、HTML 或图片格式的简历`
+      }, 400);
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return c.json({ success: false, message: "文件大小不能超过10MB" }, 400);
+    }
+    const fileBuffer = await file.arrayBuffer();
+    const task = db.createParseTask({
+      fileName: file.name,
+      fileType: file.type || fileExt,
+      status: "processing",
+      candidateId: void 0
+    });
+    try {
+      const resumeText = await extractTextFromFile(
+        fileBuffer,
+        file.name,
+        file.type,
+        apiKey,
+        apiBaseUrl
+      );
+      if (!resumeText || resumeText.trim().length < 10) {
+        db.updateParseTask(task.id, { status: "failed", errorMsg: "无法提取文件文本内容" });
+        return c.json({
+          success: false,
+          message: "无法从文件中提取有效内容。PDF请确保非扫描件或加密文件；图片请保证文字清晰。"
+        }, 400);
+      }
+      const parseResult = await parseResumeWithAI(resumeText, apiKey, apiBaseUrl);
+      if (!parseResult.name) {
+        parseResult.name = file.name.replace(/\.[^.]+$/, "").replace(/简历|_resume|resume/gi, "").trim() || "未知姓名";
+      }
+      const candidate = db.createCandidate({
+        ...parseResult,
+        sourceChannel,
+        rawResumeText: resumeText.slice(0, 5e3),
+        resumeFileName: file.name,
+        resumeFileType: file.type || `application/${fileExt}`,
+        resumeFileSize: file.size,
+        candidateStatus: "active",
+        matchScore: calculateProfileCompleteness(parseResult)
+      });
+      const base64 = arrayBufferToBase64(fileBuffer);
+      db.saveResumeFile(candidate.id, {
+        fileName: file.name,
+        fileType: file.type || `application/${fileExt}`,
+        fileSize: file.size,
+        fileData: base64
+      });
+      db.updateParseTask(task.id, {
+        status: "completed",
+        candidateId: candidate.id,
+        parseResult: JSON.stringify(parseResult)
+      });
+      return c.json({
+        success: true,
+        data: {
+          candidate,
+          parseResult,
+          taskId: task.id
+        },
+        message: `简历解析成功！已为 ${candidate.name} 创建候选人档案`
+      });
+    } catch (parseError) {
+      db.updateParseTask(task.id, {
+        status: "failed",
+        errorMsg: parseError.message
+      });
+      throw parseError;
+    }
+  } catch (e) {
+    console.error("简历解析错误:", e);
+    const msg = e.message || "未知错误";
+    let friendlyMsg = `简历解析失败: ${msg}`;
+    if (msg.includes("401") || msg.includes("invalid_api_key") || msg.includes("Incorrect API key")) {
+      friendlyMsg = "API Key 无效或已过期，请在系统设置 → AI配置中重新填写正确的 OpenAI API Key。";
+    } else if (msg.includes("429") || msg.includes("rate_limit")) {
+      friendlyMsg = "OpenAI 请求频率超限，请稍后再试（当前 API Key 配额不足）。";
+    } else if (msg.includes("quota") || msg.includes("insufficient_quota")) {
+      friendlyMsg = "OpenAI API 余额不足，请充值后再试。";
+    } else if (msg.includes("timeout") || msg.includes("ETIMEDOUT")) {
+      friendlyMsg = "请求超时，请检查网络连接或 API Base URL 是否正确。";
+    } else if (msg.includes("model") && msg.includes("not found")) {
+      friendlyMsg = "模型不存在，当前使用 gpt-4o，请确认 API Key 有权限访问该模型。";
+    }
+    return c.json({ success: false, message: friendlyMsg }, 500);
+  }
+});
+upload.post("/text", async (c) => {
+  try {
+    const apiKey = c.req.header("X-OpenAI-Key") || process.env.OPENAI_API_KEY || "";
+    const apiBaseUrl = c.req.header("X-OpenAI-Base-URL") || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    if (!apiKey) {
+      return c.json({
+        success: false,
+        message: "OpenAI API Key未配置"
+      }, 400);
+    }
+    const body = await c.req.json();
+    if (!body.text || body.text.trim().length < 20) {
+      return c.json({ success: false, message: "简历文本内容过短，请输入完整的简历信息" }, 400);
+    }
+    const parseResult = await parseResumeWithAI(body.text, apiKey, apiBaseUrl);
+    if (!parseResult.name) {
+      parseResult.name = "未知姓名";
+    }
+    const candidate = db.createCandidate({
+      ...parseResult,
+      sourceChannel: body.sourceChannel || "文本导入",
+      rawResumeText: body.text.slice(0, 5e3),
+      candidateStatus: "active",
+      matchScore: calculateProfileCompleteness(parseResult)
+    });
+    return c.json({
+      success: true,
+      data: { candidate, parseResult },
+      message: `简历解析成功！已为 ${candidate.name} 创建候选人档案`
+    });
+  } catch (e) {
+    const msg = e.message || "未知错误";
+    let friendlyMsg = `解析失败: ${msg}`;
+    if (msg.includes("401") || msg.includes("invalid_api_key") || msg.includes("Incorrect API key")) {
+      friendlyMsg = "API Key 无效或已过期，请在系统设置 → AI配置中重新填写正确的 OpenAI API Key。";
+    } else if (msg.includes("429") || msg.includes("rate_limit")) {
+      friendlyMsg = "OpenAI 请求频率超限，请稍后再试。";
+    } else if (msg.includes("quota") || msg.includes("insufficient_quota")) {
+      friendlyMsg = "OpenAI API 余额不足，请充值后再试。";
+    }
+    return c.json({ success: false, message: friendlyMsg }, 500);
+  }
+});
+upload.get("/task/:id", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const task = db.getParseTask(id);
+  if (!task) {
+    return c.json({ success: false, message: "任务不存在" }, 404);
+  }
+  return c.json({ success: true, data: task });
+});
+upload.post("/config", async (c) => {
+  try {
+    const { openaiKey, openaiBaseUrl } = await c.req.json();
+    if (!openaiKey) {
+      return c.json({ success: false, message: "API Key不能为空" }, 400);
+    }
+    const testResponse = await fetch(`${openaiBaseUrl || "https://api.openai.com/v1"}/models`, {
+      headers: { "Authorization": `Bearer ${openaiKey}` }
+    });
+    if (!testResponse.ok) {
+      return c.json({ success: false, message: "API Key无效，请检查后重试" }, 400);
+    }
+    return c.json({ success: true, message: "API Key验证成功" });
+  } catch (e) {
+    return c.json({ success: false, message: `验证失败: ${e.message}` }, 500);
+  }
+});
+const users = new Hono();
+users.get("/", (c) => {
+  const q = c.req.query();
+  const { list, total } = db.getUsers({
+    keyword: q.keyword,
+    role: q.role,
+    status: q.status,
+    page: q.page ? parseInt(q.page) : 1,
+    pageSize: q.pageSize ? parseInt(q.pageSize) : 20
+  });
+  return c.json({ success: true, data: list, total });
+});
+users.get("/:id", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const user = db.getUserById(id);
+  if (!user) return c.json({ success: false, message: "用户不存在" }, 404);
+  return c.json({ success: true, data: user });
+});
+users.post("/", async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body.username?.trim()) return c.json({ success: false, message: "登录名不能为空" }, 400);
+    if (!body.realName?.trim()) return c.json({ success: false, message: "真实姓名不能为空" }, 400);
+    if (!body.email?.trim()) return c.json({ success: false, message: "邮箱不能为空" }, 400);
+    if (!body.password?.trim()) return c.json({ success: false, message: "密码不能为空" }, 400);
+    if (body.password.length < 6) return c.json({ success: false, message: "密码不能少于6位" }, 400);
+    const validRoles = ["admin", "hr", "interviewer", "viewer"];
+    if (!validRoles.includes(body.role)) return c.json({ success: false, message: "无效的角色" }, 400);
+    const result = db.createUser(body);
+    if (result.error) return c.json({ success: false, message: result.error }, 409);
+    return c.json({ success: true, data: result.user, message: "用户创建成功" }, 201);
+  } catch (e) {
+    return c.json({ success: false, message: `创建失败: ${e.message}` }, 500);
+  }
+});
+users.put("/:id", async (c) => {
+  try {
+    const id = parseInt(c.req.param("id"));
+    const body = await c.req.json();
+    if (body.password !== void 0 && body.password !== "" && body.password.length < 6) {
+      return c.json({ success: false, message: "密码不能少于6位" }, 400);
+    }
+    const result = db.updateUser(id, body);
+    if (result.error) return c.json({ success: false, message: result.error }, 409);
+    return c.json({ success: true, data: result.user, message: "用户更新成功" });
+  } catch (e) {
+    return c.json({ success: false, message: `更新失败: ${e.message}` }, 500);
+  }
+});
+users.patch("/:id/status", (c) => {
+  const id = parseInt(c.req.param("id"));
+  const result = db.toggleUserStatus(id);
+  if (result.error) return c.json({ success: false, message: result.error }, 404);
+  const action = result.user?.status === "active" ? "启用" : "禁用";
+  return c.json({ success: true, data: result.user, message: `用户已${action}` });
+});
+users.delete("/:id", (c) => {
+  const id = parseInt(c.req.param("id"));
+  if (id === 1) return c.json({ success: false, message: "超级管理员不可删除" }, 403);
+  const ok = db.deleteUser(id);
+  if (!ok) return c.json({ success: false, message: "用户不存在" }, 404);
+  return c.json({ success: true, message: "用户已删除" });
+});
+users.get("/stats/overview", (c) => {
+  const { list } = db.getUsers({ pageSize: 9999 });
+  const total = list.length;
+  const byRole = list.reduce((acc, u) => {
+    acc[u.role] = (acc[u.role] || 0) + 1;
+    return acc;
+  }, {});
+  const byStatus = list.reduce((acc, u) => {
+    acc[u.status] = (acc[u.status] || 0) + 1;
+    return acc;
+  }, {});
+  return c.json({ success: true, data: { total, byRole, byStatus } });
+});
+const app = new Hono();
+app.use("/api/*", cors());
+app.route("/api/candidates", candidates);
+app.route("/api/upload", upload);
+app.route("/api/users", users);
+app.get("/api/stats", (c) => {
+  return c.json({ success: true, message: "use /api/candidates/stats/overview" });
+});
+app.use("/static/*", serveStatic({ root: "./public" }));
+app.get("/", (c) => c.html(getIndexHtml()));
+app.get("/candidates", (c) => c.html(getIndexHtml()));
+app.get("/candidates/*", (c) => c.html(getIndexHtml()));
+app.get("/upload", (c) => c.html(getIndexHtml()));
+app.get("/analytics", (c) => c.html(getIndexHtml()));
+app.get("/settings", (c) => c.html(getIndexHtml()));
 function getIndexHtml() {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -42,9 +1601,9 @@ function getIndexHtml() {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>简历人才管理系统</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com"><\/script>
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
   <style>
     * { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; }
     /* 侧边栏菜单项 - 不使用@apply，确保CDN兼容性 */
@@ -3680,9 +5239,10 @@ window.fetch = function(url, options = {}) {
 // ==========================================
 updateAiStatus()
 navigateTo('dashboard')
-</script>
+<\/script>
 </body>
-</html>`
+</html>`;
 }
-
-export default app
+export {
+  app as default
+};
