@@ -157,6 +157,10 @@ function getIndexHtml() {
         <span class="menu-text">人才库</span>
         <span id="candidateCount" class="menu-badge">-</span>
       </a>
+      <a class="sidebar-link" onclick="navigateTo('archive')" id="nav-archive">
+        <i class="fas fa-search menu-icon"></i>
+        <span class="menu-text">档案查询</span>
+      </a>
       <a class="sidebar-link" onclick="navigateTo('upload')" id="nav-upload">
         <i class="fas fa-cloud-upload-alt menu-icon"></i>
         <span class="menu-text">导入简历</span>
@@ -322,7 +326,7 @@ function navigateTo(page, params = {}) {
   Object.values(state.charts).forEach(chart => { try { chart.destroy() } catch {} })
   state.charts = {}
 
-  const pages = { dashboard: renderDashboard, candidates: renderCandidateList, upload: renderUpload, analytics: renderAnalytics, settings: renderSettings }
+  const pages = { dashboard: renderDashboard, candidates: renderCandidateList, archive: renderArchiveSearch, upload: renderUpload, analytics: renderAnalytics, settings: renderSettings }
   const renderFn = pages[page]
   if (renderFn) renderFn(params)
 }
@@ -617,6 +621,582 @@ async function renderDashboard() {
         </tr>\`).join('')}
       </tbody>
     </table>\`
+}
+
+// ==========================================
+// 页面：档案查询（多条件联合搜索）
+// ==========================================
+// 档案查询独立的搜索状态，不影响人才库
+const archiveState = {
+  params: {
+    page: 1, pageSize: 20,
+    keyword: '', name: '', phone: '', email: '', gender: '',
+    minAge: '', maxAge: '',
+    location: '', expectedPosition: '', expectedCity: '',
+    currentStatus: '', candidateStatus: '', highestEducation: '',
+    minExperience: '', maxExperience: '',
+    minSalary: '', maxSalary: '',
+    sourceChannel: '', skillKeyword: '', companyKeyword: '',
+    schoolKeyword: '', majorKeyword: '', industryKeyword: '',
+    hasResume: '', minMatchScore: '',
+    sortBy: 'createdAt', sortOrder: 'desc'
+  },
+  results: [],
+  total: 0,
+  loading: false
+}
+
+async function renderArchiveSearch() {
+  document.getElementById('mainContent').innerHTML = \`
+    <div class="flex flex-col h-full bg-gray-50" style="height:calc(100vh - 0px)">
+
+      <!-- 页面头部 -->
+      <div class="flex-shrink-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fas fa-search text-blue-500"></i>档案查询
+          </h2>
+          <p class="text-gray-400 text-xs mt-0.5">多维度联合查询，精准定位人才档案</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="archiveClearAll()" class="text-sm border border-gray-200 text-gray-500 px-4 py-2 rounded-xl hover:bg-gray-50 transition flex items-center gap-1.5">
+            <i class="fas fa-undo text-xs"></i>重置条件
+          </button>
+          <button onclick="archiveSearch(1)" class="text-sm bg-blue-600 text-white px-5 py-2 rounded-xl hover:bg-blue-700 transition flex items-center gap-1.5">
+            <i class="fas fa-search text-xs"></i>开始查询
+          </button>
+        </div>
+      </div>
+
+      <!-- 搜索条件区 -->
+      <div class="flex-shrink-0 overflow-y-auto bg-white border-b border-gray-100 px-6 py-4 space-y-4">
+
+        <!-- 第一行：全文搜索 -->
+        <div class="flex items-center gap-3">
+          <label class="text-xs font-semibold text-gray-400 w-16 flex-shrink-0">全文搜索</label>
+          <div class="flex-1 relative">
+            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-xs"></i>
+            <input type="text" id="aq-keyword" placeholder="搜索姓名、职位、邮箱、城市、备注..." value="\${archiveState.params.keyword}"
+              class="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+        </div>
+
+        <!-- 分隔线 + 分组标题 -->
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] font-bold text-blue-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
+            <i class="fas fa-user"></i>基本信息
+          </span>
+          <div class="flex-1 h-px bg-gray-100"></div>
+        </div>
+
+        <!-- 第二行：个人信息 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">姓名</label>
+            <input type="text" id="aq-name" placeholder="模糊匹配" value="\${archiveState.params.name}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">手机号</label>
+            <input type="text" id="aq-phone" placeholder="部分匹配" value="\${archiveState.params.phone}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">邮箱</label>
+            <input type="text" id="aq-email" placeholder="部分匹配" value="\${archiveState.params.email}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">性别</label>
+            <select id="aq-gender" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">不限</option>
+              <option value="男" \${archiveState.params.gender==='男'?'selected':''}>男</option>
+              <option value="女" \${archiveState.params.gender==='女'?'selected':''}>女</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">年龄区间</label>
+            <div class="flex items-center gap-1">
+              <input type="number" id="aq-minAge" placeholder="最小" min="16" max="70" value="\${archiveState.params.minAge}"
+                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <span class="text-gray-300 text-xs">-</span>
+              <input type="number" id="aq-maxAge" placeholder="最大" min="16" max="70" value="\${archiveState.params.maxAge}"
+                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">现居城市</label>
+            <input type="text" id="aq-location" placeholder="如: 北京、上海" value="\${archiveState.params.location}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+        </div>
+
+        <!-- 职业意向分组 -->
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] font-bold text-green-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
+            <i class="fas fa-briefcase"></i>职业意向
+          </span>
+          <div class="flex-1 h-px bg-gray-100"></div>
+        </div>
+
+        <!-- 第三行：职业信息 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">求职状态</label>
+            <select id="aq-currentStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">不限</option>
+              <option value="在职-考虑机会" \${archiveState.params.currentStatus==='在职-考虑机会'?'selected':''}>在职-考虑机会</option>
+              <option value="在职-急找" \${archiveState.params.currentStatus==='在职-急找'?'selected':''}>在职-急找</option>
+              <option value="离职-找工作" \${archiveState.params.currentStatus==='离职-找工作'?'selected':''}>离职-找工作</option>
+              <option value="应届生" \${archiveState.params.currentStatus==='应届生'?'selected':''}>应届生</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">档案状态</label>
+            <select id="aq-candidateStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">不限</option>
+              <option value="active" \${archiveState.params.candidateStatus==='active'?'selected':''}>活跃</option>
+              <option value="interviewing" \${archiveState.params.candidateStatus==='interviewing'?'selected':''}>面试中</option>
+              <option value="hired" \${archiveState.params.candidateStatus==='hired'?'selected':''}>已录用</option>
+              <option value="rejected" \${archiveState.params.candidateStatus==='rejected'?'selected':''}>已淘汰</option>
+              <option value="blacklist" \${archiveState.params.candidateStatus==='blacklist'?'selected':''}>黑名单</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">意向职位</label>
+            <input type="text" id="aq-expectedPosition" placeholder="如: Java工程师" value="\${archiveState.params.expectedPosition}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">期望城市</label>
+            <input type="text" id="aq-expectedCity" placeholder="如: 北京、深圳" value="\${archiveState.params.expectedCity}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">工作年限</label>
+            <div class="flex items-center gap-1">
+              <input type="number" id="aq-minExp" placeholder="最少" min="0" max="50" value="\${archiveState.params.minExperience}"
+                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <span class="text-gray-300 text-xs">-</span>
+              <input type="number" id="aq-maxExp" placeholder="最多" min="0" max="50" value="\${archiveState.params.maxExperience}"
+                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">期望薪资(元/月)</label>
+            <div class="flex items-center gap-1">
+              <input type="number" id="aq-minSalary" placeholder="最低" min="0" value="\${archiveState.params.minSalary}"
+                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <span class="text-gray-300 text-xs">-</span>
+              <input type="number" id="aq-maxSalary" placeholder="最高" min="0" value="\${archiveState.params.maxSalary}"
+                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+          </div>
+        </div>
+
+        <!-- 教育背景分组 -->
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] font-bold text-yellow-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
+            <i class="fas fa-graduation-cap"></i>教育背景
+          </span>
+          <div class="flex-1 h-px bg-gray-100"></div>
+        </div>
+
+        <!-- 第四行：教育信息 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">最高学历</label>
+            <select id="aq-highestEdu" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">不限</option>
+              <option value="博士" \${archiveState.params.highestEducation==='博士'?'selected':''}>博士</option>
+              <option value="硕士" \${archiveState.params.highestEducation==='硕士'?'selected':''}>硕士</option>
+              <option value="本科" \${archiveState.params.highestEducation==='本科'?'selected':''}>本科</option>
+              <option value="大专" \${archiveState.params.highestEducation==='大专'?'selected':''}>大专</option>
+              <option value="高中" \${archiveState.params.highestEducation==='高中'?'selected':''}>高中/中专</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">毕业院校</label>
+            <input type="text" id="aq-school" placeholder="如: 清华、北大" value="\${archiveState.params.schoolKeyword}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">所学专业</label>
+            <input type="text" id="aq-major" placeholder="如: 计算机、金融" value="\${archiveState.params.majorKeyword}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+        </div>
+
+        <!-- 工作经历分组 -->
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] font-bold text-purple-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
+            <i class="fas fa-building"></i>工作经历
+          </span>
+          <div class="flex-1 h-px bg-gray-100"></div>
+        </div>
+
+        <!-- 第五行：工作经历 -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">技能/技术栈</label>
+            <input type="text" id="aq-skill" placeholder="逗号分隔多个技能" value="\${archiveState.params.skillKeyword}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">任职公司</label>
+            <input type="text" id="aq-company" placeholder="公司名模糊匹配" value="\${archiveState.params.companyKeyword}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">所属行业</label>
+            <input type="text" id="aq-industry" placeholder="如: 互联网、金融" value="\${archiveState.params.industryKeyword}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">来源渠道</label>
+            <select id="aq-channel" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">不限</option>
+              <option value="BOSS直聘" \${archiveState.params.sourceChannel==='BOSS直聘'?'selected':''}>BOSS直聘</option>
+              <option value="智联招聘" \${archiveState.params.sourceChannel==='智联招聘'?'selected':''}>智联招聘</option>
+              <option value="猎头推荐" \${archiveState.params.sourceChannel==='猎头推荐'?'selected':''}>猎头推荐</option>
+              <option value="LinkedIn" \${archiveState.params.sourceChannel==='LinkedIn'?'selected':''}>LinkedIn</option>
+              <option value="校园招聘" \${archiveState.params.sourceChannel==='校园招聘'?'selected':''}>校园招聘</option>
+              <option value="内推" \${archiveState.params.sourceChannel==='内推'?'selected':''}>内推</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">匹配分 ≥</label>
+            <input type="number" id="aq-minScore" placeholder="如: 80" min="0" max="100" value="\${archiveState.params.minMatchScore}"
+              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] text-gray-400">简历原件</label>
+            <select id="aq-hasResume" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="">不限</option>
+              <option value="true" \${archiveState.params.hasResume==='true'?'selected':''}>有简历文件</option>
+              <option value="false" \${archiveState.params.hasResume==='false'?'selected':''}>无简历文件</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 备注关键词 -->
+        <div class="grid grid-cols-1 gap-3">
+          <div class="flex items-center gap-3">
+            <label class="text-[11px] text-gray-400 w-16 flex-shrink-0">HR备注</label>
+            <input type="text" id="aq-hrNotes" placeholder="搜索HR备注内容..." value="\${archiveState.params.hrNotesKeyword || ''}"
+              class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 结果区 -->
+      <div class="flex-1 overflow-auto px-6 py-4">
+        <div id="archiveResults">
+          <div class="flex flex-col items-center justify-center py-20 text-gray-300">
+            <i class="fas fa-search text-5xl mb-4 opacity-30"></i>
+            <p class="text-base font-medium text-gray-400">设置查询条件，点击「开始查询」</p>
+            <p class="text-sm text-gray-300 mt-1">支持多个条件联合过滤，精准定位档案</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  \`
+}
+
+// 收集档案查询条件并执行搜索
+async function archiveSearch(page = 1) {
+  const get = (id) => (document.getElementById(id)?.value || '').trim()
+  archiveState.params = {
+    ...archiveState.params,
+    page,
+    keyword: get('aq-keyword'),
+    name: get('aq-name'),
+    phone: get('aq-phone'),
+    email: get('aq-email'),
+    gender: get('aq-gender'),
+    minAge: get('aq-minAge'),
+    maxAge: get('aq-maxAge'),
+    location: get('aq-location'),
+    currentStatus: get('aq-currentStatus'),
+    candidateStatus: get('aq-candidateStatus'),
+    expectedPosition: get('aq-expectedPosition'),
+    expectedCity: get('aq-expectedCity'),
+    minExperience: get('aq-minExp'),
+    maxExperience: get('aq-maxExp'),
+    minSalary: get('aq-minSalary'),
+    maxSalary: get('aq-maxSalary'),
+    highestEducation: get('aq-highestEdu'),
+    schoolKeyword: get('aq-school'),
+    majorKeyword: get('aq-major'),
+    skillKeyword: get('aq-skill'),
+    companyKeyword: get('aq-company'),
+    industryKeyword: get('aq-industry'),
+    sourceChannel: get('aq-channel'),
+    minMatchScore: get('aq-minScore'),
+    hasResume: get('aq-hasResume'),
+    hrNotesKeyword: get('aq-hrNotes')
+  }
+
+  const resultsDiv = document.getElementById('archiveResults')
+  if (!resultsDiv) return
+  resultsDiv.innerHTML = \`
+    <div class="flex items-center justify-center py-12 text-gray-400">
+      <i class="fas fa-spinner fa-spin mr-2"></i>查询中...
+    </div>
+  \`
+
+  // 构建查询参数
+  const p = archiveState.params
+  const query = Object.entries(p)
+    .filter(([_, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => \`\${k}=\${encodeURIComponent(v)}\`).join('&')
+
+  const res = await apiRequest(\`/api/candidates?\${query}\`)
+  if (!res.success) {
+    resultsDiv.innerHTML = '<p class="text-center py-8 text-red-400">查询失败，请重试</p>'
+    return
+  }
+
+  archiveState.results = res.data || []
+  archiveState.total = res.total || 0
+  const totalPages = Math.ceil(archiveState.total / archiveState.params.pageSize)
+
+  // 生成条件摘要标签
+  const chips = []
+  if (p.keyword) chips.push(\`全文: "\${p.keyword}"\`)
+  if (p.name) chips.push(\`姓名: \${p.name}\`)
+  if (p.phone) chips.push(\`手机: \${p.phone}\`)
+  if (p.email) chips.push(\`邮箱: \${p.email}\`)
+  if (p.gender) chips.push(\`性别: \${p.gender}\`)
+  if (p.minAge || p.maxAge) chips.push(\`年龄: \${p.minAge||'?'}-\${p.maxAge||'?'}岁\`)
+  if (p.location) chips.push(\`城市: \${p.location}\`)
+  if (p.currentStatus) chips.push(\`求职状态: \${p.currentStatus}\`)
+  if (p.candidateStatus) chips.push(\`档案状态: \${p.candidateStatus}\`)
+  if (p.expectedPosition) chips.push(\`意向职位: \${p.expectedPosition}\`)
+  if (p.expectedCity) chips.push(\`期望城市: \${p.expectedCity}\`)
+  if (p.minExperience || p.maxExperience) chips.push(\`工作年限: \${p.minExperience||'0'}-\${p.maxExperience||'∞'}年\`)
+  if (p.minSalary || p.maxSalary) chips.push(\`薪资: \${p.minSalary||'?'}-\${p.maxSalary||'?'}元\`)
+  if (p.highestEducation) chips.push(\`学历: \${p.highestEducation}\`)
+  if (p.schoolKeyword) chips.push(\`院校: \${p.schoolKeyword}\`)
+  if (p.majorKeyword) chips.push(\`专业: \${p.majorKeyword}\`)
+  if (p.skillKeyword) chips.push(\`技能: \${p.skillKeyword}\`)
+  if (p.companyKeyword) chips.push(\`公司: \${p.companyKeyword}\`)
+  if (p.industryKeyword) chips.push(\`行业: \${p.industryKeyword}\`)
+  if (p.sourceChannel) chips.push(\`渠道: \${p.sourceChannel}\`)
+  if (p.minMatchScore) chips.push(\`匹配分≥\${p.minMatchScore}\`)
+  if (p.hasResume === 'true') chips.push('有简历原件')
+  if (p.hasResume === 'false') chips.push('无简历原件')
+  if (p.hrNotesKeyword) chips.push(\`备注: \${p.hrNotesKeyword}\`)
+
+  if (archiveState.results.length === 0) {
+    resultsDiv.innerHTML = \`
+      <div class="bg-white rounded-2xl border border-gray-100 p-6">
+        \${chips.length ? \`<div class="flex flex-wrap gap-2 mb-4">
+          \${chips.map(c => \`<span class="text-xs bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-full">\${c}</span>\`).join('')}
+        </div>\` : ''}
+        <div class="text-center py-10 text-gray-400">
+          <i class="fas fa-user-slash text-4xl mb-3 block opacity-40"></i>
+          <p class="font-medium">未找到符合条件的档案</p>
+          <p class="text-sm mt-1 text-gray-300">请尝试放宽查询条件</p>
+        </div>
+      </div>
+    \`
+    return
+  }
+
+  resultsDiv.innerHTML = \`
+    <!-- 结果统计 + 条件标签 -->
+    <div class="bg-white rounded-2xl border border-gray-100 p-4 mb-3 flex items-center gap-4 flex-wrap">
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <span class="text-sm font-bold text-gray-800">找到 <span class="text-blue-600 text-lg">\${archiveState.total}</span> 条档案</span>
+        \${totalPages > 1 ? \`<span class="text-xs text-gray-400">第 \${p.page}/\${totalPages} 页，每页 \${p.pageSize} 条</span>\` : ''}
+      </div>
+      \${chips.length ? \`<div class="flex flex-wrap gap-1.5 flex-1">
+        \${chips.map(c => \`<span class="text-xs bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded-full">\${c}</span>\`).join('')}
+      </div>\` : ''}
+      <div class="flex items-center gap-2 flex-shrink-0 ml-auto">
+        <label class="text-xs text-gray-400">排序:</label>
+        <select class="text-xs border border-gray-200 rounded-lg px-2 py-1" onchange="archiveChangeSortBy(this.value)">
+          <option value="createdAt-desc" \${p.sortBy+'-'+p.sortOrder==='createdAt-desc'?'selected':''}>最新添加</option>
+          <option value="matchScore-desc" \${p.sortBy+'-'+p.sortOrder==='matchScore-desc'?'selected':''}>匹配分数</option>
+          <option value="yearsOfExperience-desc" \${p.sortBy+'-'+p.sortOrder==='yearsOfExperience-desc'?'selected':''}>工作年限</option>
+          <option value="name-asc" \${p.sortBy+'-'+p.sortOrder==='name-asc'?'selected':''}>姓名排序</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 结果表格 -->
+    <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50 border-b border-gray-100">
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">姓名</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">性别/年龄</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">联系方式</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">意向职位</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">学历</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">经验</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">期望薪资</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">城市</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">技能标签</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">状态</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">匹配分</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">来源</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">导入时间</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 whitespace-nowrap">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            \${archiveState.results.map(c => renderArchiveRow(c)).join('')}
+          </tbody>
+        </table>
+      </div>
+      \${totalPages > 1 ? renderArchivePagination(p.page, totalPages) : ''}
+    </div>
+  \`
+}
+
+function renderArchiveRow(c) {
+  const skills = (c.skills || []).slice(0, 3)
+  return \`
+    <tr class="hover:bg-blue-50/20 transition cursor-pointer group" onclick="viewCandidate(\${c.id})">
+      <td class="px-4 py-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+            \${c.name?.charAt(0) || '?'}
+          </div>
+          <span class="font-semibold text-gray-800 whitespace-nowrap">\${c.name}</span>
+        </div>
+      </td>
+      <td class="px-4 py-3 text-gray-500 whitespace-nowrap">
+        \${c.gender || '-'}\${c.age ? ' · ' + c.age + '岁' : ''}
+      </td>
+      <td class="px-4 py-3">
+        <div class="text-gray-600 text-xs leading-5">
+          \${c.phone ? \`<div>\${c.phone}</div>\` : ''}
+          \${c.email ? \`<div class="text-gray-400 truncate max-w-32" title="\${c.email}">\${c.email}</div>\` : ''}
+          \${!c.phone && !c.email ? '-' : ''}
+        </div>
+      </td>
+      <td class="px-4 py-3 text-gray-700 text-xs whitespace-nowrap max-w-32 truncate" title="\${c.expectedPosition || ''}">
+        \${c.expectedPosition || '-'}
+      </td>
+      <td class="px-4 py-3 whitespace-nowrap">
+        <span class="text-xs bg-yellow-50 text-yellow-700 border border-yellow-100 px-2 py-0.5 rounded-full">\${c.highestEducation || '-'}</span>
+      </td>
+      <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+        \${c.yearsOfExperience ? c.yearsOfExperience + '年' : '-'}
+      </td>
+      <td class="px-4 py-3 text-green-600 text-xs whitespace-nowrap font-medium">
+        \${getSalaryText(c.expectedSalaryMin, c.expectedSalaryMax)}
+      </td>
+      <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+        \${c.location || '-'}
+      </td>
+      <td class="px-4 py-3">
+        <div class="flex flex-wrap gap-1">
+          \${skills.map(s => \`<span class="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">\${s.skillName}</span>\`).join('')}
+          \${skills.length === 0 ? '<span class="text-gray-300 text-xs">-</span>' : ''}
+        </div>
+      </td>
+      <td class="px-4 py-3 whitespace-nowrap">
+        \${getStatusBadge(c.candidateStatus)}
+      </td>
+      <td class="px-4 py-3 whitespace-nowrap">
+        \${c.matchScore ? \`<span class="text-orange-600 font-bold text-sm">\${c.matchScore}</span><span class="text-gray-300 text-xs">分</span>\` : '<span class="text-gray-300 text-xs">-</span>'}
+      </td>
+      <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+        \${c.sourceChannel || '-'}
+      </td>
+      <td class="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
+        \${formatDate(c.createdAt)}
+      </td>
+      <td class="px-4 py-3">
+        <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+          <button onclick="event.stopPropagation();viewCandidate(\${c.id})"
+            class="text-xs text-blue-600 border border-blue-200 px-2 py-1 rounded-lg hover:bg-blue-50 whitespace-nowrap">
+            <i class="fas fa-eye"></i>
+          </button>
+          <button onclick="event.stopPropagation();showEditCandidateModal(\${c.id})"
+            class="text-xs text-gray-500 border border-gray-200 px-2 py-1 rounded-lg hover:bg-gray-50 whitespace-nowrap">
+            <i class="fas fa-edit"></i>
+          </button>
+        </div>
+      </td>
+    </tr>
+  \`
+}
+
+function renderArchivePagination(currentPage, totalPages) {
+  const pages = []
+  const start = Math.max(1, currentPage - 3)
+  const end = Math.min(totalPages, currentPage + 3)
+  for (let i = start; i <= end; i++) pages.push(i)
+  return \`
+    <div class="px-4 py-3 border-t border-gray-50 flex items-center justify-between text-sm">
+      <span class="text-xs text-gray-400">第 \${currentPage} / \${totalPages} 页</span>
+      <div class="flex gap-1.5">
+        <button onclick="archiveSearch(1)" \${currentPage<=1?'disabled':''} 
+          class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs disabled:opacity-30 hover:bg-gray-50">
+          <i class="fas fa-angle-double-left"></i>
+        </button>
+        <button onclick="archiveSearch(\${currentPage-1})" \${currentPage<=1?'disabled':''} 
+          class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs disabled:opacity-30 hover:bg-gray-50">
+          <i class="fas fa-chevron-left"></i>
+        </button>
+        \${pages.map(p => \`<button onclick="archiveSearch(\${p})"
+          class="px-3 py-1.5 border rounded-lg text-xs \${p===currentPage?'bg-blue-600 text-white border-blue-600':'border-gray-200 hover:bg-gray-50'}">\${p}</button>\`).join('')}
+        <button onclick="archiveSearch(\${currentPage+1})" \${currentPage>=totalPages?'disabled':''} 
+          class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs disabled:opacity-30 hover:bg-gray-50">
+          <i class="fas fa-chevron-right"></i>
+        </button>
+        <button onclick="archiveSearch(\${totalPages})" \${currentPage>=totalPages?'disabled':''} 
+          class="px-2 py-1.5 border border-gray-200 rounded-lg text-xs disabled:opacity-30 hover:bg-gray-50">
+          <i class="fas fa-angle-double-right"></i>
+        </button>
+      </div>
+    </div>
+  \`
+}
+
+function archiveChangeSortBy(val) {
+  const [sortBy, sortOrder] = val.split('-')
+  archiveState.params.sortBy = sortBy
+  archiveState.params.sortOrder = sortOrder
+  archiveSearch(1)
+}
+
+function archiveClearAll() {
+  archiveState.params = {
+    page: 1, pageSize: 20,
+    keyword: '', name: '', phone: '', email: '', gender: '',
+    minAge: '', maxAge: '',
+    location: '', expectedPosition: '', expectedCity: '',
+    currentStatus: '', candidateStatus: '', highestEducation: '',
+    minExperience: '', maxExperience: '',
+    minSalary: '', maxSalary: '',
+    sourceChannel: '', skillKeyword: '', companyKeyword: '',
+    schoolKeyword: '', majorKeyword: '', industryKeyword: '',
+    hasResume: '', minMatchScore: '',
+    hrNotesKeyword: '',
+    sortBy: 'createdAt', sortOrder: 'desc'
+  }
+  renderArchiveSearch()
 }
 
 // ==========================================

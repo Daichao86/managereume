@@ -482,7 +482,7 @@ class MemoryDatabase {
   getCandidates(params: any = {}): { list: Candidate[], total: number } {
     let list = Array.from(this.candidates.values())
     
-    // 关键词搜索
+    // 关键词搜索（全文，覆盖姓名/邮箱/电话/职位/自评/城市/备注）
     if (params.keyword) {
       const kw = params.keyword.toLowerCase()
       list = list.filter(c => 
@@ -491,10 +491,64 @@ class MemoryDatabase {
         c.phone?.includes(kw) ||
         c.expectedPosition?.toLowerCase().includes(kw) ||
         c.selfEvaluation?.toLowerCase().includes(kw) ||
-        c.location?.toLowerCase().includes(kw)
+        c.location?.toLowerCase().includes(kw) ||
+        c.hrNotes?.toLowerCase().includes(kw)
       )
     }
-    
+
+    // 姓名精确/模糊
+    if (params.name) {
+      const kw = params.name.toLowerCase()
+      list = list.filter(c => c.name?.toLowerCase().includes(kw))
+    }
+
+    // 手机号
+    if (params.phone) {
+      list = list.filter(c => c.phone?.includes(params.phone))
+    }
+
+    // 邮箱
+    if (params.email) {
+      const kw = params.email.toLowerCase()
+      list = list.filter(c => c.email?.toLowerCase().includes(kw))
+    }
+
+    // 性别
+    if (params.gender) {
+      list = list.filter(c => c.gender === params.gender)
+    }
+
+    // 年龄区间
+    if (params.minAge !== undefined && params.minAge !== '') {
+      list = list.filter(c => (c.age || 0) >= Number(params.minAge))
+    }
+    if (params.maxAge !== undefined && params.maxAge !== '') {
+      list = list.filter(c => (c.age || 0) <= Number(params.maxAge))
+    }
+
+    // 现居城市（模糊）
+    if (params.location) {
+      const kw = params.location.toLowerCase()
+      list = list.filter(c => c.location?.toLowerCase().includes(kw))
+    }
+
+    // 求职意向职位（模糊）
+    if (params.expectedPosition) {
+      const kw = params.expectedPosition.toLowerCase()
+      list = list.filter(c => c.expectedPosition?.toLowerCase().includes(kw))
+    }
+
+    // 期望城市（模糊）
+    if (params.expectedCity) {
+      const kw = params.expectedCity.toLowerCase()
+      list = list.filter(c => c.expectedCity?.toLowerCase().includes(kw))
+    }
+
+    // 当前求职状态
+    if (params.currentStatus) {
+      list = list.filter(c => c.currentStatus === params.currentStatus)
+    }
+
     // 状态筛选
     if (params.candidateStatus) {
       list = list.filter(c => c.candidateStatus === params.candidateStatus)
@@ -511,28 +565,107 @@ class MemoryDatabase {
     }
     
     // 工作年限
-    if (params.minExperience !== undefined) {
-      list = list.filter(c => (c.yearsOfExperience || 0) >= params.minExperience)
+    if (params.minExperience !== undefined && params.minExperience !== '') {
+      list = list.filter(c => (c.yearsOfExperience || 0) >= Number(params.minExperience))
     }
-    if (params.maxExperience !== undefined) {
-      list = list.filter(c => (c.yearsOfExperience || 0) <= params.maxExperience)
+    if (params.maxExperience !== undefined && params.maxExperience !== '') {
+      list = list.filter(c => (c.yearsOfExperience || 0) <= Number(params.maxExperience))
+    }
+
+    // 期望薪资区间（单位：元/月）
+    if (params.minSalary !== undefined && params.minSalary !== '') {
+      list = list.filter(c => c.expectedSalaryMax === undefined || (c.expectedSalaryMax || 0) >= Number(params.minSalary))
+    }
+    if (params.maxSalary !== undefined && params.maxSalary !== '') {
+      list = list.filter(c => (c.expectedSalaryMin || 0) <= Number(params.maxSalary))
+    }
+
+    // 匹配分数下限
+    if (params.minMatchScore !== undefined && params.minMatchScore !== '') {
+      list = list.filter(c => (c.matchScore || 0) >= Number(params.minMatchScore))
+    }
+
+    // 是否有简历原件
+    if (params.hasResume === 'true' || params.hasResume === true) {
+      const idsWithResume = new Set(Array.from(this.resumeFiles.keys()))
+      list = list.filter(c => c.id !== undefined && idsWithResume.has(c.id))
+    } else if (params.hasResume === 'false' || params.hasResume === false) {
+      const idsWithResume = new Set(Array.from(this.resumeFiles.keys()))
+      list = list.filter(c => c.id !== undefined && !idsWithResume.has(c.id))
     }
     
     // 黑名单
-    if (params.isBlacklist !== undefined) {
-      list = list.filter(c => c.isBlacklist === params.isBlacklist)
+    if (params.isBlacklist !== undefined && params.isBlacklist !== '') {
+      const val = params.isBlacklist === 'true' || params.isBlacklist === true
+      list = list.filter(c => !!c.isBlacklist === val)
     }
-    
-    // 技能搜索
+
+    // 技能搜索（支持多个技能逗号分隔，AND逻辑）
     if (params.skillKeyword) {
-      const skillKw = params.skillKeyword.toLowerCase()
-      const candidateIdsWithSkill = new Set<number>()
-      this.skills.forEach(skill => {
-        if (skill.skillName.toLowerCase().includes(skillKw) && skill.candidateId) {
-          candidateIdsWithSkill.add(skill.candidateId)
+      const skillKws = params.skillKeyword.split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
+      skillKws.forEach((skillKw: string) => {
+        const candidateIdsWithSkill = new Set<number>()
+        this.skills.forEach(skill => {
+          if (skill.skillName.toLowerCase().includes(skillKw) && skill.candidateId) {
+            candidateIdsWithSkill.add(skill.candidateId)
+          }
+        })
+        list = list.filter(c => c.id && candidateIdsWithSkill.has(c.id))
+      })
+    }
+
+    // 公司名称（工作经历中搜索）
+    if (params.companyKeyword) {
+      const kw = params.companyKeyword.toLowerCase()
+      const candidateIdsWithCompany = new Set<number>()
+      this.workExperiences.forEach(w => {
+        if (w.companyName?.toLowerCase().includes(kw) && w.candidateId) {
+          candidateIdsWithCompany.add(w.candidateId)
         }
       })
-      list = list.filter(c => c.id && candidateIdsWithSkill.has(c.id))
+      list = list.filter(c => c.id && candidateIdsWithCompany.has(c.id))
+    }
+
+    // 学校名称（教育经历中搜索）
+    if (params.schoolKeyword) {
+      const kw = params.schoolKeyword.toLowerCase()
+      const candidateIdsWithSchool = new Set<number>()
+      this.educations.forEach(e => {
+        if (e.schoolName?.toLowerCase().includes(kw) && e.candidateId) {
+          candidateIdsWithSchool.add(e.candidateId)
+        }
+      })
+      list = list.filter(c => c.id && candidateIdsWithSchool.has(c.id))
+    }
+
+    // 专业名称（教育经历中搜索）
+    if (params.majorKeyword) {
+      const kw = params.majorKeyword.toLowerCase()
+      const candidateIdsWithMajor = new Set<number>()
+      this.educations.forEach(e => {
+        if (e.major?.toLowerCase().includes(kw) && e.candidateId) {
+          candidateIdsWithMajor.add(e.candidateId)
+        }
+      })
+      list = list.filter(c => c.id && candidateIdsWithMajor.has(c.id))
+    }
+
+    // 行业（工作经历中）
+    if (params.industryKeyword) {
+      const kw = params.industryKeyword.toLowerCase()
+      const candidateIdsWithIndustry = new Set<number>()
+      this.workExperiences.forEach(w => {
+        if (w.industry?.toLowerCase().includes(kw) && w.candidateId) {
+          candidateIdsWithIndustry.add(w.candidateId)
+        }
+      })
+      list = list.filter(c => c.id && candidateIdsWithIndustry.has(c.id))
+    }
+
+    // HR备注关键词
+    if (params.hrNotesKeyword) {
+      const kw = params.hrNotesKeyword.toLowerCase()
+      list = list.filter(c => c.hrNotes?.toLowerCase().includes(kw))
     }
     
     // 排序
