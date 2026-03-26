@@ -5,6 +5,18 @@ import { Hono } from 'hono'
 import { db } from '../lib/database'
 import type { Candidate, SearchParams } from '../types'
 
+// 安全的 ArrayBuffer → Base64 转换（分块处理，避免大文件栈溢出）
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 8192
+  let result = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    result += String.fromCharCode(...chunk)
+  }
+  return btoa(result)
+}
+
 type Bindings = {
   OPENAI_API_KEY: string
   OPENAI_BASE_URL: string
@@ -158,6 +170,115 @@ candidates.post('/:id/interviews', async (c) => {
 candidates.get('/stats/overview', (c) => {
   const stats = db.getStatistics()
   return c.json({ success: true, data: stats })
+})
+
+// ==========================================
+// 简历文件相关 API
+// ==========================================
+
+// GET /api/candidates/:id/resume - 获取简历文件（Base64流，用于预览/下载）
+candidates.get('/:id/resume', (c) => {
+  const id = parseInt(c.req.param('id'))
+  const candidate = db.getCandidateById(id)
+  if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
+  
+  const file = db.getResumeFile(id)
+  if (!file) return c.json({ success: false, message: '该候选人暂无上传的简历文件' }, 404)
+  
+  // 判断是否请求下载（?download=1）
+  const download = c.req.query('download') === '1'
+  
+  // 将 Base64 解码为二进制
+  const binaryStr = atob(file.fileData)
+  const bytes = new Uint8Array(binaryStr.length)
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+  
+  const disposition = download
+    ? `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`
+    : `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`
+  
+  return new Response(bytes.buffer, {
+    status: 200,
+    headers: {
+      'Content-Type': file.fileType || 'application/octet-stream',
+      'Content-Disposition': disposition,
+      'Content-Length': String(bytes.length),
+      'Cache-Control': 'private, no-cache'
+    }
+  })
+})
+
+// GET /api/candidates/:id/resume/info - 获取简历文件元信息（不含内容）
+candidates.get('/:id/resume/info', (c) => {
+  const id = parseInt(c.req.param('id'))
+  const candidate = db.getCandidateById(id)
+  if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
+  
+  const file = db.getResumeFile(id)
+  if (!file) return c.json({ success: false, hasFile: false, message: '暂无简历文件' })
+  
+  return c.json({
+    success: true,
+    hasFile: true,
+    data: {
+      fileName: file.fileName,
+      fileType: file.fileType,
+      fileSize: file.fileSize,
+      uploadedAt: file.uploadedAt
+    }
+  })
+})
+
+// POST /api/candidates/:id/resume - 替换上传简历文件
+candidates.post('/:id/resume', async (c) => {
+  try {
+    const id = parseInt(c.req.param('id'))
+    const candidate = db.getCandidateById(id)
+    if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
+    
+    const formData = await c.req.formData()
+    const file = formData.get('file') as File | null
+    if (!file) return c.json({ success: false, message: '请选择要上传的文件' }, 400)
+    
+    const allowedExts = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp']
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
+    if (!allowedExts.includes(fileExt)) {
+      return c.json({ success: false, message: '仅支持 PDF、Word、JPG、PNG 格式' }, 400)
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      return c.json({ success: false, message: '文件大小不能超过 10MB' }, 400)
+    }
+    
+    const fileBuffer = await file.arrayBuffer()
+    const base64 = arrayBufferToBase64(fileBuffer)
+    
+    db.saveResumeFile(id, {
+      fileName: file.name,
+      fileType: file.type || `application/${fileExt}`,
+      fileSize: file.size,
+      fileData: base64
+    })
+    
+    return c.json({
+      success: true,
+      message: '简历文件上传成功',
+      data: {
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size
+      }
+    })
+  } catch (e: any) {
+    return c.json({ success: false, message: `上传失败: ${e.message}` }, 500)
+  }
+})
+
+// DELETE /api/candidates/:id/resume - 删除简历文件
+candidates.delete('/:id/resume', (c) => {
+  const id = parseInt(c.req.param('id'))
+  const deleted = db.deleteResumeFile(id)
+  if (!deleted) return c.json({ success: false, message: '文件不存在' }, 404)
+  return c.json({ success: true, message: '简历文件已删除' })
 })
 
 export default candidates

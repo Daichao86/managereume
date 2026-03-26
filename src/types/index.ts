@@ -123,6 +123,9 @@ export interface Candidate {
   rawResumeText?: string
   resumeFileUrl?: string
   resumeFileName?: string
+  resumeFileType?: string   // MIME类型，如 application/pdf / image/jpeg
+  resumeFileSize?: number   // 文件大小（字节）
+  resumeUploadedAt?: string // 最近上传时间
   createdAt?: string
   updatedAt?: string
   // 关联数据

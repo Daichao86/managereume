@@ -11,6 +11,36 @@ import type {
 // 内存数据库（演示用）
 // 生产环境替换为MySQL连接
 // ==========================================
+// 用户角色与状态
+export type UserRole = 'admin' | 'hr' | 'interviewer' | 'viewer'
+export type UserStatus = 'active' | 'disabled'
+
+export interface SystemUser {
+  id?: number
+  username: string        // 登录名
+  realName: string        // 真实姓名
+  email: string
+  phone?: string
+  role: UserRole          // admin/hr/interviewer/viewer
+  department?: string     // 所属部门
+  status: UserStatus      // active/disabled
+  password?: string       // 明文存储（演示用，生产应哈希）
+  avatar?: string         // 头像首字母色
+  lastLoginAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+// 文件存储结构（独立存储，不混入候选人基础数据，避免列表查询时传输大体积数据）
+interface ResumeFile {
+  candidateId: number
+  fileName: string
+  fileType: string       // MIME 类型
+  fileSize: number
+  fileData: string       // Base64 编码的文件内容
+  uploadedAt: string
+}
+
 class MemoryDatabase {
   private candidates: Map<number, Candidate> = new Map()
   private educations: Map<number, Education> = new Map()
@@ -21,12 +51,18 @@ class MemoryDatabase {
   private tags: Map<number, CandidateTag> = new Map()
   private interviews: Map<number, InterviewRecord> = new Map()
   private parseTasks: Map<number, ParseTask> = new Map()
-  
+  // 简历文件独立存储（key = candidateId）
+  private resumeFiles: Map<number, ResumeFile> = new Map()
+  // 系统用户
+  private users: Map<number, SystemUser> = new Map()
+  private userIdCounter = 1
+
   private candidateIdCounter = 1
   private subIdCounter = 100
 
   constructor() {
     this.seedDemoData()
+    this.seedDemoUsers()
   }
 
   private seedDemoData() {
@@ -288,6 +324,158 @@ class MemoryDatabase {
   }
 
   // ==========================================
+  // 演示用户初始化
+  // ==========================================
+  private seedDemoUsers() {
+    const demoUsers: Omit<SystemUser, 'id'>[] = [
+      {
+        username: 'admin',
+        realName: '系统管理员',
+        email: 'admin@company.com',
+        phone: '13800000001',
+        role: 'admin',
+        department: '技术部',
+        status: 'active',
+        password: 'admin123',
+        createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      {
+        username: 'hr_zhang',
+        realName: '张招聘',
+        email: 'zhang.hr@company.com',
+        phone: '13800000002',
+        role: 'hr',
+        department: '人力资源部',
+        status: 'active',
+        password: 'hr123456',
+        createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      {
+        username: 'interviewer_li',
+        realName: '李面试官',
+        email: 'li.interview@company.com',
+        phone: '13800000003',
+        role: 'interviewer',
+        department: '研发部',
+        status: 'active',
+        password: 'inter123',
+        createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      {
+        username: 'viewer_wang',
+        realName: '王只读',
+        email: 'wang.view@company.com',
+        phone: '13800000004',
+        role: 'viewer',
+        department: '业务部',
+        status: 'disabled',
+        password: 'view1234',
+        createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ]
+    demoUsers.forEach(u => {
+      const id = this.userIdCounter++
+      this.users.set(id, { ...u, id })
+    })
+  }
+
+  // ==========================================
+  // 用户管理 CRUD
+  // ==========================================
+
+  getUsers(params: { keyword?: string; role?: string; status?: string; page?: number; pageSize?: number } = {}): { list: SystemUser[], total: number } {
+    let list = Array.from(this.users.values()).map(u => {
+      // 返回时不含密码
+      const { password: _, ...safe } = u
+      return safe as SystemUser
+    })
+    if (params.keyword) {
+      const kw = params.keyword.toLowerCase()
+      list = list.filter(u =>
+        u.username.toLowerCase().includes(kw) ||
+        u.realName.toLowerCase().includes(kw) ||
+        u.email.toLowerCase().includes(kw) ||
+        (u.department || '').toLowerCase().includes(kw)
+      )
+    }
+    if (params.role) list = list.filter(u => u.role === params.role)
+    if (params.status) list = list.filter(u => u.status === params.status)
+    // 按创建时间倒序
+    list.sort((a, b) => (b.createdAt || '') > (a.createdAt || '') ? 1 : -1)
+    const total = list.length
+    const page = params.page || 1
+    const pageSize = params.pageSize || 20
+    list = list.slice((page - 1) * pageSize, page * pageSize)
+    return { list, total }
+  }
+
+  getUserById(id: number): SystemUser | undefined {
+    const u = this.users.get(id)
+    if (!u) return undefined
+    const { password: _, ...safe } = u
+    return safe as SystemUser
+  }
+
+  getUserByUsername(username: string): SystemUser | undefined {
+    return Array.from(this.users.values()).find(u => u.username === username)
+  }
+
+  createUser(data: SystemUser): { user?: SystemUser; error?: string } {
+    // 检查用户名唯一
+    if (this.getUserByUsername(data.username)) {
+      return { error: `登录名 "${data.username}" 已存在` }
+    }
+    // 检查邮箱唯一
+    if (Array.from(this.users.values()).some(u => u.email === data.email)) {
+      return { error: `邮箱 "${data.email}" 已被使用` }
+    }
+    const id = this.userIdCounter++
+    const now = new Date().toISOString()
+    const user: SystemUser = { ...data, id, status: data.status || 'active', createdAt: now, updatedAt: now }
+    this.users.set(id, user)
+    const { password: _, ...safe } = user
+    return { user: safe as SystemUser }
+  }
+
+  updateUser(id: number, data: Partial<SystemUser>): { user?: SystemUser; error?: string } {
+    const existing = this.users.get(id)
+    if (!existing) return { error: '用户不存在' }
+    // 检查用户名唯一（排除自身）
+    if (data.username && data.username !== existing.username && this.getUserByUsername(data.username)) {
+      return { error: `登录名 "${data.username}" 已存在` }
+    }
+    // 检查邮箱唯一（排除自身）
+    if (data.email && data.email !== existing.email &&
+        Array.from(this.users.values()).some(u => u.id !== id && u.email === data.email)) {
+      return { error: `邮箱 "${data.email}" 已被使用` }
+    }
+    const updated: SystemUser = { ...existing, ...data, id, updatedAt: new Date().toISOString() }
+    // 如果没传新密码，保留旧密码
+    if (!data.password) updated.password = existing.password
+    this.users.set(id, updated)
+    const { password: _, ...safe } = updated
+    return { user: safe as SystemUser }
+  }
+
+  toggleUserStatus(id: number): { user?: SystemUser; error?: string } {
+    const u = this.users.get(id)
+    if (!u) return { error: '用户不存在' }
+    return this.updateUser(id, { status: u.status === 'active' ? 'disabled' : 'active' })
+  }
+
+  deleteUser(id: number): boolean {
+    return this.users.delete(id)
+  }
+
+  getUserCount(): number {
+    return this.users.size
+  }
+
+  // ==========================================
   // 候选人操作
   // ==========================================
   
@@ -447,6 +635,8 @@ class MemoryDatabase {
     Array.from(this.projects.entries()).forEach(([k, v]) => { if (v.candidateId === id) this.projects.delete(k) })
     Array.from(this.certifications.entries()).forEach(([k, v]) => { if (v.candidateId === id) this.certifications.delete(k) })
     Array.from(this.interviews.entries()).forEach(([k, v]) => { if (v.candidateId === id) this.interviews.delete(k) })
+    // 删除简历文件
+    this.resumeFiles.delete(id)
     return true
   }
 
@@ -487,6 +677,54 @@ class MemoryDatabase {
 
   getParseTask(id: number): ParseTask | undefined {
     return this.parseTasks.get(id)
+  }
+
+  // ==========================================
+  // 简历文件操作
+  // ==========================================
+
+  /** 保存或替换候选人的简历文件（Base64） */
+  saveResumeFile(candidateId: number, file: Omit<ResumeFile, 'candidateId' | 'uploadedAt'>): ResumeFile {
+    const record: ResumeFile = {
+      ...file,
+      candidateId,
+      uploadedAt: new Date().toISOString()
+    }
+    this.resumeFiles.set(candidateId, record)
+    // 同步更新候选人的元数据字段
+    const candidate = this.candidates.get(candidateId)
+    if (candidate) {
+      this.candidates.set(candidateId, {
+        ...candidate,
+        resumeFileName: file.fileName,
+        resumeFileType: file.fileType,
+        resumeFileSize: file.fileSize,
+        resumeUploadedAt: record.uploadedAt,
+        updatedAt: record.uploadedAt
+      })
+    }
+    return record
+  }
+
+  /** 获取候选人简历文件（含 Base64 数据） */
+  getResumeFile(candidateId: number): ResumeFile | undefined {
+    return this.resumeFiles.get(candidateId)
+  }
+
+  /** 删除候选人简历文件 */
+  deleteResumeFile(candidateId: number): boolean {
+    if (!this.resumeFiles.has(candidateId)) return false
+    this.resumeFiles.delete(candidateId)
+    const candidate = this.candidates.get(candidateId)
+    if (candidate) {
+      const c = { ...candidate }
+      delete c.resumeFileName
+      delete c.resumeFileType
+      delete c.resumeFileSize
+      delete c.resumeUploadedAt
+      this.candidates.set(candidateId, { ...c, updatedAt: new Date().toISOString() })
+    }
+    return true
   }
 
   // 统计数据

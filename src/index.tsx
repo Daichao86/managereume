@@ -6,6 +6,7 @@ import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/cloudflare-workers'
 import candidates from './routes/candidates'
 import upload from './routes/upload'
+import users from './routes/users'
 
 type Bindings = {
   OPENAI_API_KEY: string
@@ -20,6 +21,7 @@ app.use('/api/*', cors())
 // API路由
 app.route('/api/candidates', candidates)
 app.route('/api/upload', upload)
+app.route('/api/users', users)
 
 // 统计数据API（快捷路由）
 app.get('/api/stats', (c) => {
@@ -44,20 +46,39 @@ function getIndexHtml() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>简历人才管理系统</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     * { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; }
-    .sidebar-link { @apply flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-blue-700 hover:text-white transition-all cursor-pointer; }
-    .sidebar-link.active { @apply bg-blue-600 text-white; }
-    .tag-skill { @apply bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full; }
-    .tag-industry { @apply bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full; }
-    .tag-trait { @apply bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full; }
-    .tag-education { @apply bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full; }
-    .animate-spin-slow { animation: spin 2s linear infinite; }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .status-badge { @apply text-xs font-medium px-2.5 py-0.5 rounded-full; }
+    /* 侧边栏菜单项 - 不使用@apply，确保CDN兼容性 */
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      color: #cbd5e1;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-decoration: none;
+      white-space: nowrap;
+      overflow: hidden;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .sidebar-link:hover { background: #1d4ed8; color: #fff; }
+    .sidebar-link.active { background: #2563eb; color: #fff; }
+    .sidebar-link .menu-icon { flex-shrink: 0; width: 18px; text-align: center; font-size: 14px; }
+    .sidebar-link .menu-text { flex: 1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-link .menu-badge { flex-shrink: 0; background: #1e40af; font-size: 11px; border-radius: 9999px; padding: 1px 7px; }
+    /* 标签样式 */
+    .tag-skill { background: #dbeafe; color: #1d4ed8; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
+    .tag-industry { background: #dcfce7; color: #15803d; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
+    .tag-trait { background: #f3e8ff; color: #7e22ce; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
+    .tag-education { background: #fef9c3; color: #a16207; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
+    .status-badge { font-size: 12px; font-weight: 500; padding: 2px 10px; border-radius: 9999px; }
     .loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; }
     .card-hover { transition: all 0.2s; }
     .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
@@ -89,51 +110,54 @@ function getIndexHtml() {
 <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm"></div>
 
 <div class="flex h-screen overflow-hidden">
-  <!-- 侧边栏 -->
-  <aside class="w-64 bg-blue-900 text-white flex flex-col flex-shrink-0">
-    <div class="p-6 border-b border-blue-800">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center">
-          <i class="fas fa-users text-white text-lg"></i>
+  <!-- 侧边栏：固定宽度260px -->
+  <aside style="width:260px;min-width:260px;flex-shrink:0;background:#1e3a5f;display:flex;flex-direction:column;overflow:hidden">
+    <!-- 头部品牌区 -->
+    <div style="padding:18px 16px 16px;border-bottom:1px solid rgba(255,255,255,0.1)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:38px;height:38px;background:#2563eb;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <i class="fas fa-users" style="color:#fff;font-size:16px"></i>
         </div>
-        <div>
-          <h1 class="font-bold text-white text-base leading-tight">简历人才管理</h1>
-          <p class="text-blue-300 text-xs">智能HR招聘平台</p>
+        <div style="min-width:0">
+          <div style="font-weight:700;color:#fff;font-size:14px;white-space:nowrap;line-height:1.3">简历人才管理</div>
+          <div style="color:#93c5fd;font-size:11px;white-space:nowrap;line-height:1.3">智能HR招聘平台</div>
         </div>
       </div>
     </div>
     
-    <nav class="p-4 flex-1 space-y-1">
+    <!-- 导航菜单 -->
+    <nav style="padding:12px 10px;flex:1;display:flex;flex-direction:column;gap:3px;overflow-y:auto">
       <a class="sidebar-link active" onclick="navigateTo('dashboard')" id="nav-dashboard">
-        <i class="fas fa-chart-line w-5"></i>
-        <span>数据看板</span>
+        <i class="fas fa-chart-line menu-icon"></i>
+        <span class="menu-text">数据看板</span>
       </a>
       <a class="sidebar-link" onclick="navigateTo('candidates')" id="nav-candidates">
-        <i class="fas fa-users w-5"></i>
-        <span>人才库</span>
-        <span id="candidateCount" class="ml-auto bg-blue-700 text-xs px-2 py-0.5 rounded-full">-</span>
+        <i class="fas fa-users menu-icon"></i>
+        <span class="menu-text">人才库</span>
+        <span id="candidateCount" class="menu-badge">-</span>
       </a>
       <a class="sidebar-link" onclick="navigateTo('upload')" id="nav-upload">
-        <i class="fas fa-cloud-upload-alt w-5"></i>
-        <span>导入简历</span>
+        <i class="fas fa-cloud-upload-alt menu-icon"></i>
+        <span class="menu-text">导入简历</span>
       </a>
       <a class="sidebar-link" onclick="navigateTo('analytics')" id="nav-analytics">
-        <i class="fas fa-chart-bar w-5"></i>
-        <span>统计分析</span>
+        <i class="fas fa-chart-bar menu-icon"></i>
+        <span class="menu-text">统计分析</span>
       </a>
-      <div class="border-t border-blue-800 my-2"></div>
+      <div style="height:1px;background:rgba(255,255,255,0.1);margin:6px 4px"></div>
       <a class="sidebar-link" onclick="navigateTo('settings')" id="nav-settings">
-        <i class="fas fa-cog w-5"></i>
-        <span>系统设置</span>
+        <i class="fas fa-cog menu-icon"></i>
+        <span class="menu-text">系统设置</span>
       </a>
     </nav>
     
-    <div class="p-4 border-t border-blue-800">
-      <div class="bg-blue-800 rounded-xl p-3">
-        <p class="text-xs text-blue-300 mb-1">AI解析状态</p>
-        <div class="flex items-center gap-2">
-          <div id="aiStatusDot" class="w-2 h-2 rounded-full bg-gray-400"></div>
-          <span id="aiStatusText" class="text-sm text-gray-300">未配置</span>
+    <!-- AI状态 -->
+    <div style="padding:10px 10px 14px;border-top:1px solid rgba(255,255,255,0.1)">
+      <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:10px 12px">
+        <div style="font-size:11px;color:#93c5fd;margin-bottom:6px">AI解析状态</div>
+        <div style="display:flex;align-items:center;gap:7px">
+          <div id="aiStatusDot" style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0"></div>
+          <span id="aiStatusText" style="font-size:12px;color:#d1d5db;white-space:nowrap">未配置</span>
         </div>
       </div>
     </div>
@@ -500,9 +524,14 @@ async function renderCandidateList(params = {}) {
           <h2 class="text-2xl font-bold text-gray-800">人才库</h2>
           <p class="text-gray-500 text-sm mt-1">管理所有候选人档案与筛选</p>
         </div>
-        <button onclick="navigateTo('upload')" class="bg-blue-600 text-white px-5 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center gap-2">
-          <i class="fas fa-plus"></i>导入简历
-        </button>
+        <div class="flex gap-2">
+          <button onclick="showCreateCandidateModal()" class="border border-blue-300 text-blue-600 bg-white px-4 py-2.5 rounded-xl hover:bg-blue-50 transition flex items-center gap-2 text-sm font-medium">
+            <i class="fas fa-user-plus"></i>手动新增
+          </button>
+          <button onclick="navigateTo('upload')" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center gap-2 text-sm font-medium">
+            <i class="fas fa-cloud-upload-alt"></i>导入简历
+          </button>
+        </div>
       </div>
       
       <!-- 搜索筛选栏 -->
@@ -632,9 +661,12 @@ function renderCandidateRow(c) {
             \${c.sourceChannel ? \`<span class="text-xs text-gray-400 border border-gray-200 px-2 py-0.5 rounded-full"><i class="fas fa-paper-plane mr-1"></i>\${c.sourceChannel}</span>\` : ''}
           </div>
         </div>
-        <div class="text-right flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
-          <button class="text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg text-sm border border-blue-200">
-            查看详情 <i class="fas fa-chevron-right ml-1"></i>
+        <div class="flex flex-col gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition">
+          <button onclick="event.stopPropagation();viewCandidate(\${c.id})" class="text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg text-sm border border-blue-200 whitespace-nowrap">
+            <i class="fas fa-eye mr-1"></i>查看
+          </button>
+          <button onclick="event.stopPropagation();showEditCandidateModal(\${c.id})" class="text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm border border-gray-200 whitespace-nowrap">
+            <i class="fas fa-edit mr-1"></i>编辑
           </button>
         </div>
       </div>
@@ -741,7 +773,7 @@ function renderCandidateDetail(c) {
               \${c.yearsOfExperience ? \`<span class="text-gray-600"><i class="fas fa-clock text-gray-300 mr-1"></i>\${c.yearsOfExperience}年经验</span>\` : ''}
             </div>
           </div>
-          <div class="flex flex-col gap-2">
+          <div class="flex flex-col gap-2" style="min-width:120px">
             <select onchange="updateStatus(\${c.id}, this.value)" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="active" \${c.candidateStatus==='active'?'selected':''}>活跃</option>
               <option value="interviewing" \${c.candidateStatus==='interviewing'?'selected':''}>面试中</option>
@@ -749,6 +781,9 @@ function renderCandidateDetail(c) {
               <option value="rejected" \${c.candidateStatus==='rejected'?'selected':''}>已淘汰</option>
               <option value="blacklist" \${c.candidateStatus==='blacklist'?'selected':''}>黑名单</option>
             </select>
+            <button onclick="showEditCandidateModal(\${c.id})" class="border border-green-200 text-green-600 rounded-xl px-3 py-2 text-sm hover:bg-green-50 transition">
+              <i class="fas fa-edit mr-1"></i>编辑档案
+            </button>
             <button onclick="showAddInterviewModal(\${c.id})" class="border border-blue-200 text-blue-600 rounded-xl px-3 py-2 text-sm hover:bg-blue-50 transition">
               <i class="fas fa-calendar-plus mr-1"></i>添加面试
             </button>
@@ -917,6 +952,18 @@ function renderCandidateDetail(c) {
             <button onclick="saveHrNotes(\${c.id})" class="mt-2 w-full bg-blue-600 text-white py-2 rounded-xl text-sm hover:bg-blue-700 transition">保存备注</button>
           </div>
           
+          <!-- 简历原文件 -->
+          <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5" id="resumeFileCard-\${c.id}">
+            <h3 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <i class="fas fa-file-pdf text-red-400"></i>简历原件
+            </h3>
+            <div id="resumeFileContent-\${c.id}">
+              <div class="text-center py-4 text-gray-400 text-sm">
+                <i class="fas fa-spinner fa-spin text-lg mb-2 block"></i>加载中...
+              </div>
+            </div>
+          </div>
+          
           <!-- 创建信息 -->
           <div class="bg-gray-50 rounded-2xl p-4 text-xs text-gray-400 space-y-1">
             <p><i class="fas fa-clock mr-1"></i>导入时间: \${formatDate(c.createdAt)}</p>
@@ -927,6 +974,29 @@ function renderCandidateDetail(c) {
       </div>
     </div>
     
+    <!-- 简历预览弹窗 -->
+    <div id="resumePreviewModal" class="hidden fixed inset-0 bg-black/80 z-50 flex flex-col">
+      <div class="flex items-center justify-between px-5 py-3 bg-gray-900 text-white flex-shrink-0">
+        <div class="flex items-center gap-3">
+          <i class="fas fa-file-alt text-blue-400"></i>
+          <span id="previewModalTitle" class="font-medium text-sm">简历预览</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="previewDownloadBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-1.5 rounded-lg flex items-center gap-2 transition">
+            <i class="fas fa-download"></i>下载
+          </button>
+          <button onclick="document.getElementById('resumePreviewModal').classList.add('hidden');document.getElementById('previewIframe').src=''" 
+            class="w-8 h-8 rounded-lg hover:bg-gray-700 flex items-center justify-center text-gray-300 hover:text-white transition">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-hidden bg-gray-800 flex items-center justify-center">
+        <iframe id="previewIframe" src="" class="w-full h-full border-0" style="min-height:0"></iframe>
+        <img id="previewImg" src="" class="hidden max-w-full max-h-full object-contain" style="max-height:calc(100vh - 60px)">
+      </div>
+    </div>
+
     <!-- 面试记录弹窗 -->
     <div id="interviewModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
       <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
@@ -962,6 +1032,144 @@ function renderCandidateDetail(c) {
       </div>
     </div>
   \`
+  
+  // 异步加载简历文件信息
+  loadResumeFileInfo(c.id)
+}
+
+async function loadResumeFileInfo(candidateId) {
+  const container = document.getElementById(\`resumeFileContent-\${candidateId}\`)
+  if (!container) return
+  
+  try {
+    const res = await apiRequest(\`/api/candidates/\${candidateId}/resume/info\`)
+    if (!res.hasFile) {
+      container.innerHTML = \`
+        <div class="text-center py-4">
+          <div class="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+            <i class="fas fa-file-upload text-gray-300 text-xl"></i>
+          </div>
+          <p class="text-gray-400 text-xs mb-3">暂无简历文件</p>
+          <label class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 rounded-lg inline-flex items-center gap-1.5 transition">
+            <i class="fas fa-upload"></i>上传简历
+            <input type="file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" 
+              onchange="uploadResumeFile(\${candidateId}, this)">
+          </label>
+        </div>
+      \`
+    } else {
+      const f = res.data
+      const isImage = f.fileType?.startsWith('image/')
+      const isPdf = f.fileType === 'application/pdf' || f.fileName?.toLowerCase().endsWith('.pdf')
+      const iconClass = isPdf ? 'fa-file-pdf text-red-400' : isImage ? 'fa-file-image text-green-400' : 'fa-file-word text-blue-400'
+      const sizeText = f.fileSize > 1024*1024 ? (f.fileSize/1024/1024).toFixed(1)+' MB' : (f.fileSize/1024).toFixed(0)+' KB'
+      
+      container.innerHTML = \`
+        <div class="space-y-3">
+          <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+            <div class="w-10 h-10 bg-white rounded-lg border border-gray-200 flex items-center justify-center flex-shrink-0">
+              <i class="fas \${iconClass} text-lg"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-gray-800 truncate" title="\${f.fileName}">\${f.fileName}</p>
+              <p class="text-xs text-gray-400 mt-0.5">\${sizeText} · \${formatDate(f.uploadedAt)}</p>
+            </div>
+          </div>
+          
+          \${(isPdf || isImage) ? \`
+          <button onclick="previewResumeFile(\${candidateId}, '\${f.fileName}', '\${f.fileType}')" 
+            class="w-full py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2">
+            <i class="fas fa-eye"></i>预览简历
+          </button>\` : ''}
+          
+          <div class="grid grid-cols-2 gap-2">
+            <a href="/api/candidates/\${candidateId}/resume?download=1" download="\${f.fileName}"
+              class="py-2 border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5">
+              <i class="fas fa-download text-xs"></i>下载
+            </a>
+            <label class="py-2 border border-orange-200 hover:bg-orange-50 text-orange-600 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 cursor-pointer">
+              <i class="fas fa-sync-alt text-xs"></i>替换
+              <input type="file" class="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp" 
+                onchange="uploadResumeFile(\${candidateId}, this)">
+            </label>
+          </div>
+          
+          <button onclick="deleteResumeFile(\${candidateId})"
+            class="w-full py-1.5 text-red-400 hover:text-red-600 text-xs transition flex items-center justify-center gap-1">
+            <i class="fas fa-trash text-xs"></i>删除文件
+          </button>
+        </div>
+      \`
+    }
+  } catch(e) {
+    container.innerHTML = '<p class="text-xs text-red-400 text-center py-3">加载失败</p>'
+  }
+}
+
+async function previewResumeFile(candidateId, fileName, fileType) {
+  const modal = document.getElementById('resumePreviewModal')
+  const iframe = document.getElementById('previewIframe')
+  const img = document.getElementById('previewImg')
+  const title = document.getElementById('previewModalTitle')
+  const dlBtn = document.getElementById('previewDownloadBtn')
+  
+  title.textContent = fileName
+  dlBtn.onclick = () => { window.location.href = \`/api/candidates/\${candidateId}/resume?download=1\` }
+  
+  const isImage = fileType?.startsWith('image/')
+  const previewUrl = \`/api/candidates/\${candidateId}/resume\`
+  
+  if (isImage) {
+    iframe.classList.add('hidden')
+    img.classList.remove('hidden')
+    img.src = previewUrl
+  } else {
+    img.classList.add('hidden')
+    iframe.classList.remove('hidden')
+    iframe.src = previewUrl
+  }
+  
+  modal.classList.remove('hidden')
+}
+
+async function uploadResumeFile(candidateId, input) {
+  const file = input.files[0]
+  if (!file) return
+  
+  const stopLoading = showLoading('上传简历文件...', '正在保存原始简历文件')
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const res = await fetch(\`/api/candidates/\${candidateId}/resume\`, {
+      method: 'POST',
+      body: formData
+    })
+    const data = await res.json()
+    stopLoading()
+    
+    if (data.success) {
+      showToast('简历文件上传成功！', 'success')
+      loadResumeFileInfo(candidateId)
+    } else {
+      showToast(data.message || '上传失败', 'error')
+    }
+  } catch(e) {
+    stopLoading()
+    showToast('上传失败: ' + e.message, 'error')
+  }
+  input.value = ''
+}
+
+async function deleteResumeFile(candidateId) {
+  if (!confirm('确定要删除该简历文件吗？')) return
+  const res = await apiRequest(\`/api/candidates/\${candidateId}/resume\`, { method: 'DELETE' })
+  if (res.success) {
+    showToast('文件已删除', 'success')
+    loadResumeFileInfo(candidateId)
+  } else {
+    showToast(res.message || '删除失败', 'error')
+  }
 }
 
 async function updateStatus(id, status) {
@@ -1016,6 +1224,449 @@ function confirmDelete(id, name) {
     if (res.success) { showToast('删除成功', 'success'); navigateTo('candidates') }
     else showToast(res.message, 'error')
   })
+}
+
+// ==========================================
+// 手动新增 / 编辑候选人 - 通用表单弹窗
+// ==========================================
+function buildCandidateFormModal(title, candidate) {
+  const c = candidate || {}
+  // 移除旧弹窗
+  document.getElementById('candidateFormModal')?.remove()
+  const modal = document.createElement('div')
+  modal.id = 'candidateFormModal'
+  modal.className = 'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto py-8 px-4'
+  modal.style.background = 'rgba(0,0,0,0.6)'
+  modal.innerHTML = \`
+    <div class="bg-white rounded-2xl shadow-2xl w-full" style="max-width:760px">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <h3 class="font-bold text-gray-800 text-lg">\${title}</h3>
+        <button onclick="document.getElementById('candidateFormModal').remove()" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="p-6 space-y-5">
+        <!-- Tab -->
+        <div class="flex gap-1 bg-gray-100 p-1 rounded-xl">
+          <button onclick="switchFormTab('basic')" id="ftab-basic" class="flex-1 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-blue-600">基本信息</button>
+          <button onclick="switchFormTab('edu')" id="ftab-edu" class="flex-1 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700">教育经历</button>
+          <button onclick="switchFormTab('work')" id="ftab-work" class="flex-1 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700">工作经历</button>
+          <button onclick="switchFormTab('skill')" id="ftab-skill" class="flex-1 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700">技能标签</button>
+        </div>
+        
+        <!-- 基本信息 -->
+        <div id="fpanel-basic" class="space-y-4">
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">姓名 <span class="text-red-500">*</span></label>
+              <input id="f-name" type="text" value="\${c.name||''}" placeholder="请输入姓名" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">性别</label>
+              <select id="f-gender" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">请选择</option>
+                <option value="男" \${c.gender==='男'?'selected':''}>男</option>
+                <option value="女" \${c.gender==='女'?'selected':''}>女</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">年龄</label>
+              <input id="f-age" type="number" value="\${c.age||''}" placeholder="如: 28" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" min="16" max="70">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">手机号</label>
+              <input id="f-phone" type="text" value="\${c.phone||''}" placeholder="13800138000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">邮箱</label>
+              <input id="f-email" type="email" value="\${c.email||''}" placeholder="example@email.com" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">现居城市</label>
+              <input id="f-location" type="text" value="\${c.location||''}" placeholder="如: 北京市朝阳区" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">籍贯</label>
+              <input id="f-hometown" type="text" value="\${c.hometown||''}" placeholder="如: 山东省济南市" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">最高学历</label>
+              <select id="f-education" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">请选择</option>
+                \${['博士','硕士','本科','大专','高中'].map(e => \`<option value="\${e}" \${c.highestEducation===e?'selected':''}>\${e}</option>\`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">工作年限</label>
+              <input id="f-exp" type="number" value="\${c.yearsOfExperience||''}" placeholder="如: 5" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" min="0" max="50" step="0.5">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">求职状态</label>
+              <select id="f-curStatus" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                \${['在职','离职','应届'].map(s => \`<option value="\${s}" \${c.currentStatus===s?'selected':''}>\${s}</option>\`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">期望职位</label>
+              <input id="f-position" type="text" value="\${c.expectedPosition||''}" placeholder="如: 高级Java工程师" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">期望城市</label>
+              <input id="f-ecity" type="text" value="\${c.expectedCity||''}" placeholder="如: 北京/上海" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">期望薪资下限(元/月)</label>
+              <input id="f-smin" type="number" value="\${c.expectedSalaryMin||''}" placeholder="如: 20000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" step="1000">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">期望薪资上限(元/月)</label>
+              <input id="f-smax" type="number" value="\${c.expectedSalaryMax||''}" placeholder="如: 30000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" step="1000">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">来源渠道</label>
+              <select id="f-channel" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                \${['手动录入','BOSS直聘','智联招聘','猎头推荐','LinkedIn','校园招聘','内推','官网投递'].map(ch => \`<option value="\${ch}" \${c.sourceChannel===ch?'selected':''}>\${ch}</option>\`).join('')}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">自我评价</label>
+            <textarea id="f-eval" rows="3" placeholder="请输入自我评价..." class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500">\${c.selfEvaluation||''}</textarea>
+          </div>
+        </div>
+        
+        <!-- 教育经历 -->
+        <div id="fpanel-edu" class="hidden">
+          <div class="flex justify-between items-center mb-3">
+            <p class="text-sm text-gray-500">按时间倒序填写，最新的在前</p>
+            <button onclick="addEduRow()" class="text-blue-600 text-sm hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200"><i class="fas fa-plus mr-1"></i>添加经历</button>
+          </div>
+          <div id="eduRows" class="space-y-3">
+            \${(c.educations?.length ? c.educations : [{schoolName:'',degree:'本科',major:'',startDate:'',endDate:''}]).map((e,i) => buildEduRow(e,i)).join('')}
+          </div>
+        </div>
+        
+        <!-- 工作经历 -->
+        <div id="fpanel-work" class="hidden">
+          <div class="flex justify-between items-center mb-3">
+            <p class="text-sm text-gray-500">按时间倒序填写，最新的在前</p>
+            <button onclick="addWorkRow()" class="text-blue-600 text-sm hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200"><i class="fas fa-plus mr-1"></i>添加经历</button>
+          </div>
+          <div id="workRows" class="space-y-3">
+            \${(c.workExperiences?.length ? c.workExperiences : [{companyName:'',position:'',startDate:'',endDate:'',isCurrent:false,description:''}]).map((w,i) => buildWorkRow(w,i)).join('')}
+          </div>
+        </div>
+        
+        <!-- 技能标签 -->
+        <div id="fpanel-skill" class="hidden">
+          <div class="flex justify-between items-center mb-3">
+            <p class="text-sm text-gray-500">添加候选人的专业技能</p>
+            <button onclick="addSkillRow()" class="text-blue-600 text-sm hover:bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200"><i class="fas fa-plus mr-1"></i>添加技能</button>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-3 mb-3">
+            <div class="grid grid-cols-4 gap-2 text-xs font-medium text-gray-400 mb-2 px-1">
+              <span class="col-span-2">技能名称</span><span>熟练程度</span><span>使用年限</span>
+            </div>
+            <div id="skillRows" class="space-y-2">
+              \${(c.skills?.length ? c.skills : [{skillName:'',proficiency:'熟练',yearsUsed:''}]).map((s,i) => buildSkillRow(s,i)).join('')}
+            </div>
+          </div>
+          <div class="pt-3 border-t border-gray-200">
+            <p class="text-sm font-medium text-gray-700 mb-2">自定义标签</p>
+            <div id="customTagsArea" class="flex flex-wrap gap-2 p-3 border border-dashed border-gray-200 rounded-xl min-h-10 mb-2">
+              \${(c.tags||[]).filter(t=>t.tagSource==='manual').map(t => \`<span class="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full flex items-center gap-1">\${t.tagName}<button onclick="this.parentElement.remove()" class="hover:text-red-500 ml-0.5">&times;</button></span>\`).join('')}
+            </div>
+            <div class="flex gap-2">
+              <input id="newTagInput" type="text" placeholder="输入标签名，回车添加" class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomTag()}">
+              <button onclick="addCustomTag()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700">添加</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+        <button onclick="document.getElementById('candidateFormModal').remove()" class="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-white font-medium">取消</button>
+        <button onclick="submitCandidateForm(\${c.id||'null'})" class="flex-1 bg-blue-600 text-white py-2.5 rounded-xl text-sm hover:bg-blue-700 font-medium"><i class="fas fa-save mr-1"></i>保存档案</button>
+      </div>
+    </div>
+  \`
+  document.body.appendChild(modal)
+}
+
+function buildEduRow(e, i) {
+  return \`<div class="border border-gray-100 rounded-xl p-4 space-y-3 relative bg-white" id="eduRow-\${i}">
+    <button onclick="document.getElementById('eduRow-\${i}').remove()" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fas fa-times text-xs"></i></button>
+    <div class="grid grid-cols-3 gap-3">
+      <div class="col-span-2">
+        <label class="block text-xs font-medium text-gray-500 mb-1">学校名称</label>
+        <input type="text" name="edu-school-\${i}" value="\${e.schoolName||''}" placeholder="如：清华大学" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">学历</label>
+        <select name="edu-degree-\${i}" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          \${['博士','硕士','本科','大专','高中'].map(d => \`<option value="\${d}" \${e.degree===d?'selected':''}>\${d}</option>\`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">专业</label>
+        <input type="text" name="edu-major-\${i}" value="\${e.major||''}" placeholder="计算机科学" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">开始时间</label>
+        <input type="text" name="edu-start-\${i}" value="\${e.startDate||''}" placeholder="2018-09" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">结束时间</label>
+        <input type="text" name="edu-end-\${i}" value="\${e.endDate||''}" placeholder="2022-07" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+    </div>
+    <div class="flex gap-4">
+      <label class="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+        <input type="checkbox" name="edu-985-\${i}" \${e.is985?'checked':''} class="rounded text-blue-500"> 985院校
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+        <input type="checkbox" name="edu-211-\${i}" \${e.is211?'checked':''} class="rounded text-blue-500"> 211院校
+      </label>
+      <label class="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+        <input type="checkbox" name="edu-overseas-\${i}" \${e.isOverseas?'checked':''} class="rounded text-blue-500"> 海外院校
+      </label>
+    </div>
+  </div>\`
+}
+
+function buildWorkRow(w, i) {
+  return \`<div class="border border-gray-100 rounded-xl p-4 space-y-3 relative bg-white" id="workRow-\${i}">
+    <button onclick="document.getElementById('workRow-\${i}').remove()" class="absolute top-2 right-2 text-gray-300 hover:text-red-400 p-1"><i class="fas fa-times text-xs"></i></button>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">公司名称</label>
+        <input type="text" name="work-company-\${i}" value="\${w.companyName||''}" placeholder="如：字节跳动" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">职位</label>
+        <input type="text" name="work-position-\${i}" value="\${w.position||''}" placeholder="如：高级工程师" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">开始时间</label>
+        <input type="text" name="work-start-\${i}" value="\${w.startDate||''}" placeholder="2020-06" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">结束时间</label>
+        <input type="text" name="work-end-\${i}" value="\${w.isCurrent?'':w.endDate||''}" placeholder="2023-12" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" id="work-end-input-\${i}" \${w.isCurrent?'disabled':''} style="\${w.isCurrent?'opacity:0.4':''}">
+      </div>
+      <div class="flex items-end pb-1">
+        <label class="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
+          <input type="checkbox" name="work-current-\${i}" \${w.isCurrent?'checked':''} class="rounded"
+            onchange="const inp=document.getElementById('work-end-input-\${i}');inp.disabled=this.checked;inp.style.opacity=this.checked?'0.4':'1'"> 至今在职
+        </label>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">行业</label>
+        <input type="text" name="work-industry-\${i}" value="\${w.industry||''}" placeholder="互联网" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">部门</label>
+        <input type="text" name="work-dept-\${i}" value="\${w.department||''}" placeholder="技术部" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">工作描述</label>
+      <textarea name="work-desc-\${i}" rows="2" placeholder="描述主要工作职责与成绩..." class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500">\${w.description||''}</textarea>
+    </div>
+  </div>\`
+}
+
+function buildSkillRow(s, i) {
+  return \`<div class="grid grid-cols-4 gap-2 items-center" id="skillRow-\${i}">
+    <input type="text" name="skill-name-\${i}" value="\${s.skillName||''}" placeholder="技能名称" class="col-span-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <select name="skill-prof-\${i}" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      \${['精通','熟练','了解'].map(p => \`<option value="\${p}" \${s.proficiency===p?'selected':''}>\${p}</option>\`).join('')}
+    </select>
+    <div class="flex gap-1.5 items-center">
+      <input type="number" name="skill-years-\${i}" value="\${s.yearsUsed||''}" placeholder="年" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" min="0" max="30">
+      <button onclick="document.getElementById('skillRow-\${i}').remove()" class="text-gray-300 hover:text-red-400 text-lg leading-none">&times;</button>
+    </div>
+  </div>\`
+}
+
+let _eduRowCount = 0
+let _workRowCount = 0  
+let _skillRowCount = 0
+
+function addEduRow() {
+  _eduRowCount++
+  const div = document.createElement('div')
+  div.innerHTML = buildEduRow({}, 'n' + _eduRowCount)
+  document.getElementById('eduRows')?.appendChild(div.firstElementChild)
+}
+
+function addWorkRow() {
+  _workRowCount++
+  const div = document.createElement('div')
+  div.innerHTML = buildWorkRow({}, 'n' + _workRowCount)
+  document.getElementById('workRows')?.appendChild(div.firstElementChild)
+}
+
+function addSkillRow() {
+  _skillRowCount++
+  const div = document.createElement('div')
+  div.innerHTML = buildSkillRow({}, 'n' + _skillRowCount)
+  document.getElementById('skillRows')?.appendChild(div.firstElementChild)
+}
+
+function addCustomTag() {
+  const input = document.getElementById('newTagInput')
+  const val = input?.value?.trim()
+  if (!val) return
+  const span = document.createElement('span')
+  span.className = 'bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full flex items-center gap-1'
+  span.innerHTML = \`\${val}<button onclick="this.parentElement.remove()" class="hover:text-red-500 ml-0.5">&times;</button>\`
+  document.getElementById('customTagsArea')?.appendChild(span)
+  if (input) input.value = ''
+}
+
+function switchFormTab(tab) {
+  ;['basic','edu','work','skill'].forEach(t => {
+    document.getElementById('fpanel-' + t)?.classList.toggle('hidden', t !== tab)
+    const btn = document.getElementById('ftab-' + t)
+    if (!btn) return
+    btn.className = t === tab
+      ? 'flex-1 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-blue-600'
+      : 'flex-1 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700'
+  })
+}
+
+function collectFormData() {
+  const basic = {
+    name: document.getElementById('f-name')?.value?.trim() || '',
+    gender: document.getElementById('f-gender')?.value || '',
+    age: parseInt(document.getElementById('f-age')?.value) || undefined,
+    phone: document.getElementById('f-phone')?.value?.trim() || '',
+    email: document.getElementById('f-email')?.value?.trim() || '',
+    location: document.getElementById('f-location')?.value?.trim() || '',
+    hometown: document.getElementById('f-hometown')?.value?.trim() || '',
+    highestEducation: document.getElementById('f-education')?.value || '',
+    yearsOfExperience: parseFloat(document.getElementById('f-exp')?.value) || undefined,
+    currentStatus: document.getElementById('f-curStatus')?.value || '',
+    expectedPosition: document.getElementById('f-position')?.value?.trim() || '',
+    expectedCity: document.getElementById('f-ecity')?.value?.trim() || '',
+    expectedSalaryMin: parseInt(document.getElementById('f-smin')?.value) || undefined,
+    expectedSalaryMax: parseInt(document.getElementById('f-smax')?.value) || undefined,
+    sourceChannel: document.getElementById('f-channel')?.value || '手动录入',
+    selfEvaluation: document.getElementById('f-eval')?.value?.trim() || ''
+  }
+
+  // 教育经历
+  const eduRows = document.getElementById('eduRows')?.querySelectorAll('[id^="eduRow"]') || []
+  const educations = Array.from(eduRows).map(row => {
+    const id = row.id.replace('eduRow-', '')
+    const school = row.querySelector(\`[name="edu-school-\${id}"]\`)?.value?.trim()
+    if (!school) return null
+    return {
+      schoolName: school,
+      degree: row.querySelector(\`[name="edu-degree-\${id}"]\`)?.value || '本科',
+      major: row.querySelector(\`[name="edu-major-\${id}"]\`)?.value?.trim() || '',
+      startDate: row.querySelector(\`[name="edu-start-\${id}"]\`)?.value?.trim() || '',
+      endDate: row.querySelector(\`[name="edu-end-\${id}"]\`)?.value?.trim() || '',
+      is985: row.querySelector(\`[name="edu-985-\${id}"]\`)?.checked || false,
+      is211: row.querySelector(\`[name="edu-211-\${id}"]\`)?.checked || false,
+      isOverseas: row.querySelector(\`[name="edu-overseas-\${id}"]\`)?.checked || false
+    }
+  }).filter(Boolean)
+
+  // 工作经历
+  const workRows = document.getElementById('workRows')?.querySelectorAll('[id^="workRow"]') || []
+  const workExperiences = Array.from(workRows).map(row => {
+    const id = row.id.replace('workRow-', '')
+    const company = row.querySelector(\`[name="work-company-\${id}"]\`)?.value?.trim()
+    if (!company) return null
+    const isCurrent = row.querySelector(\`[name="work-current-\${id}"]\`)?.checked || false
+    return {
+      companyName: company,
+      position: row.querySelector(\`[name="work-position-\${id}"]\`)?.value?.trim() || '',
+      startDate: row.querySelector(\`[name="work-start-\${id}"]\`)?.value?.trim() || '',
+      endDate: isCurrent ? undefined : row.querySelector(\`[name="work-end-\${id}"]\`)?.value?.trim() || '',
+      isCurrent,
+      industry: row.querySelector(\`[name="work-industry-\${id}"]\`)?.value?.trim() || '',
+      department: row.querySelector(\`[name="work-dept-\${id}"]\`)?.value?.trim() || '',
+      description: row.querySelector(\`[name="work-desc-\${id}"]\`)?.value?.trim() || ''
+    }
+  }).filter(Boolean)
+
+  // 技能
+  const skillRowEls = document.getElementById('skillRows')?.querySelectorAll('[id^="skillRow"]') || []
+  const skills = Array.from(skillRowEls).map(row => {
+    const id = row.id.replace('skillRow-', '')
+    const name = row.querySelector(\`[name="skill-name-\${id}"]\`)?.value?.trim()
+    if (!name) return null
+    return {
+      skillName: name,
+      proficiency: row.querySelector(\`[name="skill-prof-\${id}"]\`)?.value || '熟练',
+      yearsUsed: parseInt(row.querySelector(\`[name="skill-years-\${id}"]\`)?.value) || undefined
+    }
+  }).filter(Boolean)
+
+  // 自定义标签
+  const tagEls = document.getElementById('customTagsArea')?.querySelectorAll('span') || []
+  const tags = Array.from(tagEls).map(el => ({
+    tagName: el.childNodes[0]?.textContent?.trim() || '',
+    tagType: 'custom',
+    tagSource: 'manual'
+  })).filter(t => t.tagName)
+
+  return { ...basic, educations, workExperiences, skills, tags }
+}
+
+async function submitCandidateForm(editId) {
+  const data = collectFormData()
+  if (!data.name) { showToast('请填写候选人姓名', 'warning'); switchFormTab('basic'); return }
+
+  let res
+  if (editId && editId !== 'null') {
+    res = await apiRequest(\`/api/candidates/\${editId}\`, { method: 'PUT', body: JSON.stringify(data) })
+  } else {
+    data.candidateStatus = 'active'
+    res = await apiRequest('/api/candidates', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  if (res.success) {
+    showToast(editId && editId !== 'null' ? '档案更新成功！' : '候选人创建成功！', 'success')
+    document.getElementById('candidateFormModal')?.remove()
+    if (editId && editId !== 'null') {
+      viewCandidate(editId)
+    } else {
+      navigateTo('candidates')
+    }
+  } else {
+    showToast(res.message || '操作失败', 'error')
+  }
+}
+
+function showCreateCandidateModal() {
+  buildCandidateFormModal('新增候选人档案', null)
+}
+
+async function showEditCandidateModal(id) {
+  const res = await apiRequest(\`/api/candidates/\${id}\`)
+  if (!res.success) { showToast('加载失败', 'error'); return }
+  buildCandidateFormModal('编辑候选人档案', res.data)
 }
 
 // ==========================================
@@ -1476,95 +2127,486 @@ async function renderAnalytics() {
 }
 
 // ==========================================
-// 页面：系统设置
+// 页面：系统设置（Tab: AI配置 / 用户管理 / 系统信息）
 // ==========================================
-function renderSettings() {
+function renderSettings(tab = 'ai') {
   document.getElementById('mainContent').innerHTML = \`
-    <div class="p-6 max-w-2xl mx-auto">
-      <div class="mb-6">
-        <h2 class="text-2xl font-bold text-gray-800">系统设置</h2>
-        <p class="text-gray-500 text-sm mt-1">配置AI解析功能和系统参数</p>
+    <div class="p-6 max-w-4xl mx-auto">
+      <div class="mb-6 flex items-center justify-between">
+        <div>
+          <h2 class="text-2xl font-bold text-gray-800">系统设置</h2>
+          <p class="text-gray-500 text-sm mt-1">管理系统配置与用户账号</p>
+        </div>
       </div>
-      
-      <!-- AI配置 -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-4">
-        <h3 class="font-semibold text-gray-800 mb-1 flex items-center gap-2">
-          <i class="fas fa-robot text-blue-500"></i>AI解析配置
-        </h3>
-        <p class="text-gray-400 text-sm mb-4">配置OpenAI API Key以启用智能简历解析功能</p>
-        
-        <div class="space-y-4">
-          <div>
-            <label class="text-sm font-medium text-gray-700 block mb-1.5">OpenAI API Key <span class="text-red-500">*</span></label>
-            <div class="relative">
-              <input type="password" id="apiKeyInput" value="\${state.openaiKey}" placeholder="sk-..." 
-                class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-24 font-mono">
-              <button onclick="toggleApiKeyVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm">
-                <i id="eyeIcon" class="fas fa-eye"></i>
+
+      <!-- Tab 导航 -->
+      <div class="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 w-fit">
+        <button onclick="switchSettingsTab('ai')" id="stab-ai"
+          class="px-5 py-2.5 text-sm font-medium rounded-xl transition \${tab==='ai'?'bg-white shadow text-blue-600':'text-gray-500 hover:text-gray-700'}">
+          <i class="fas fa-robot mr-1.5"></i>AI配置
+        </button>
+        <button onclick="switchSettingsTab('users')" id="stab-users"
+          class="px-5 py-2.5 text-sm font-medium rounded-xl transition \${tab==='users'?'bg-white shadow text-blue-600':'text-gray-500 hover:text-gray-700'}">
+          <i class="fas fa-users-cog mr-1.5"></i>用户管理
+        </button>
+        <button onclick="switchSettingsTab('system')" id="stab-system"
+          class="px-5 py-2.5 text-sm font-medium rounded-xl transition \${tab==='system'?'bg-white shadow text-blue-600':'text-gray-500 hover:text-gray-700'}">
+          <i class="fas fa-info-circle mr-1.5"></i>系统信息
+        </button>
+      </div>
+
+      <!-- Tab: AI配置 -->
+      <div id="spanel-ai" class="\${tab!=='ai'?'hidden':''}">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h3 class="font-semibold text-gray-800 mb-1 flex items-center gap-2">
+            <i class="fas fa-robot text-blue-500"></i>AI解析配置
+          </h3>
+          <p class="text-gray-400 text-sm mb-5">配置OpenAI API Key以启用智能简历解析功能</p>
+          <div class="space-y-4 max-w-xl">
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1.5">OpenAI API Key <span class="text-red-500">*</span></label>
+              <div class="relative">
+                <input type="password" id="apiKeyInput" value="\${state.openaiKey}" placeholder="sk-..."
+                  class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10 font-mono">
+                <button onclick="toggleApiKeyVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <i id="eyeIcon" class="fas fa-eye text-sm"></i>
+                </button>
+              </div>
+              <p class="text-xs text-gray-400 mt-1">API Key保存在浏览器本地，不会上传到服务器</p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-gray-700 block mb-1.5">API Base URL</label>
+              <input type="text" id="apiBaseUrlInput" value="\${state.openaiBaseUrl}" placeholder="https://api.openai.com/v1"
+                class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <p class="text-xs text-gray-400 mt-1">如使用中转服务商，修改此URL</p>
+            </div>
+            <div class="flex gap-3 pt-1">
+              <button onclick="saveApiSettings()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition">
+                <i class="fas fa-save mr-2"></i>保存配置
+              </button>
+              <button onclick="testApiConnection()" class="border border-gray-200 text-gray-600 px-6 py-3 rounded-xl text-sm hover:bg-gray-50 transition">
+                <i class="fas fa-plug mr-1"></i>测试连接
               </button>
             </div>
-            <p class="text-xs text-gray-400 mt-1">API Key保存在浏览器本地，不会上传到服务器</p>
-          </div>
-          
-          <div>
-            <label class="text-sm font-medium text-gray-700 block mb-1.5">API Base URL</label>
-            <input type="text" id="apiBaseUrlInput" value="\${state.openaiBaseUrl}" 
-              placeholder="https://api.openai.com/v1"
-              class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <p class="text-xs text-gray-400 mt-1">如使用中转服务商，修改此URL（默认: https://api.openai.com/v1）</p>
-          </div>
-          
-          <div class="flex gap-3">
-            <button onclick="saveApiSettings()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition">
-              <i class="fas fa-save mr-2"></i>保存配置
-            </button>
-            <button onclick="testApiConnection()" class="border border-gray-200 text-gray-600 px-6 py-3 rounded-xl text-sm hover:bg-gray-50 transition">
-              <i class="fas fa-plug mr-1"></i>测试连接
-            </button>
           </div>
         </div>
       </div>
-      
-      <!-- 系统信息 -->
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-4">
-        <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <i class="fas fa-info-circle text-blue-500"></i>系统信息
-        </h3>
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div class="bg-gray-50 rounded-xl p-3">
-            <p class="text-gray-400 text-xs mb-1">系统版本</p>
-            <p class="font-medium text-gray-700">v1.0.0</p>
+
+      <!-- Tab: 用户管理 -->
+      <div id="spanel-users" class="\${tab!=='users'?'hidden':''}">
+        <!-- 操作栏 -->
+        <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+          <div class="flex gap-2 flex-1 min-w-0">
+            <div class="relative flex-1 max-w-xs">
+              <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+              <input type="text" id="userSearchKw" placeholder="搜索姓名、账号、邮箱..."
+                class="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                oninput="searchUsers()">
+            </div>
+            <select id="userFilterRole" class="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchUsers()">
+              <option value="">全部角色</option>
+              <option value="admin">超级管理员</option>
+              <option value="hr">HR招聘专员</option>
+              <option value="interviewer">面试官</option>
+              <option value="viewer">只读查看</option>
+            </select>
+            <select id="userFilterStatus" class="border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="searchUsers()">
+              <option value="">全部状态</option>
+              <option value="active">已启用</option>
+              <option value="disabled">已禁用</option>
+            </select>
           </div>
-          <div class="bg-gray-50 rounded-xl p-3">
-            <p class="text-gray-400 text-xs mb-1">运行环境</p>
-            <p class="font-medium text-gray-700">Cloudflare Workers</p>
-          </div>
-          <div class="bg-gray-50 rounded-xl p-3">
-            <p class="text-gray-400 text-xs mb-1">AI模型</p>
-            <p class="font-medium text-gray-700">GPT-4o (OpenAI)</p>
-          </div>
-          <div class="bg-gray-50 rounded-xl p-3">
-            <p class="text-gray-400 text-xs mb-1">数据存储</p>
-            <p class="font-medium text-gray-700">内存存储（演示模式）</p>
+          <button onclick="showUserFormModal(null)"
+            class="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2 flex-shrink-0">
+            <i class="fas fa-user-plus"></i>新增用户
+          </button>
+        </div>
+
+        <!-- 用户列表表格 -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div id="userListContainer">
+            <div class="text-center py-12 text-gray-400">
+              <i class="fas fa-spinner fa-spin text-xl mb-2 block"></i>加载中...
+            </div>
           </div>
         </div>
       </div>
-      
-      <!-- Java后端说明 -->
-      <div class="bg-blue-50 rounded-2xl p-5 border border-blue-100">
-        <h4 class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
-          <i class="fab fa-java text-blue-600 text-lg"></i>连接Java后端说明
-        </h4>
-        <p class="text-sm text-blue-700 mb-3">当前为演示模式（内存存储）。接入生产Java+MySQL后端：</p>
-        <ol class="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-          <li>使用 migrations/001_initial_schema.sql 在MySQL中建表</li>
-          <li>在Java Spring Boot中实现对应的REST API（同路径）</li>
-          <li>修改 src/routes/ 中的接口调用地址到Java服务</li>
-          <li>或直接在Java中提供完整前后端，本前端可独立使用</li>
-        </ol>
+
+      <!-- Tab: 系统信息 -->
+      <div id="spanel-system" class="\${tab!=='system'?'hidden':''}">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-4">
+          <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <i class="fas fa-server text-blue-500"></i>系统信息
+          </h3>
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-gray-400 text-xs mb-1">系统版本</p>
+              <p class="font-semibold text-gray-700">v1.0.0</p>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-gray-400 text-xs mb-1">运行环境</p>
+              <p class="font-semibold text-gray-700">Cloudflare Workers</p>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-gray-400 text-xs mb-1">AI解析模型</p>
+              <p class="font-semibold text-gray-700">GPT-4o (OpenAI)</p>
+            </div>
+            <div class="bg-gray-50 rounded-xl p-4">
+              <p class="text-gray-400 text-xs mb-1">数据存储</p>
+              <p class="font-semibold text-gray-700">内存存储（演示模式）</p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-blue-50 rounded-2xl p-5 border border-blue-100">
+          <h4 class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+            <i class="fab fa-java text-blue-600 text-lg"></i>连接Java后端说明
+          </h4>
+          <p class="text-sm text-blue-700 mb-3">当前为演示模式。接入生产Java+MySQL后端：</p>
+          <ol class="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+            <li>使用 migrations/001_initial_schema.sql 在MySQL中建表</li>
+            <li>在Java Spring Boot中实现对应的REST API（同路径）</li>
+            <li>修改 src/routes/ 中的接口调用地址到Java服务</li>
+            <li>或直接在Java中提供完整前后端，本前端可独立使用</li>
+          </ol>
+        </div>
       </div>
     </div>
   \`
+
+  // 如果当前是用户管理 Tab，加载数据
+  if (tab === 'users') loadAndRenderUsers()
+}
+
+function switchSettingsTab(tab) {
+  ;['ai','users','system'].forEach(t => {
+    document.getElementById('spanel-' + t)?.classList.toggle('hidden', t !== tab)
+    const btn = document.getElementById('stab-' + t)
+    if (!btn) return
+    btn.className = t === tab
+      ? 'px-5 py-2.5 text-sm font-medium rounded-xl transition bg-white shadow text-blue-600'
+      : 'px-5 py-2.5 text-sm font-medium rounded-xl transition text-gray-500 hover:text-gray-700'
+  })
+  if (tab === 'users') loadAndRenderUsers()
+}
+
+// ==========================================
+// 用户管理 —— 数据与渲染
+// ==========================================
+const userState = {
+  list: [],
+  total: 0,
+  keyword: '',
+  role: '',
+  status: ''
+}
+
+const ROLE_CONFIG = {
+  admin:       { label: '超级管理员', color: 'bg-red-100 text-red-700',    icon: 'fa-crown' },
+  hr:          { label: 'HR招聘专员', color: 'bg-blue-100 text-blue-700',  icon: 'fa-user-tie' },
+  interviewer: { label: '面试官',     color: 'bg-purple-100 text-purple-700', icon: 'fa-comments' },
+  viewer:      { label: '只读查看',   color: 'bg-gray-100 text-gray-600',   icon: 'fa-eye' }
+}
+
+const AVATAR_COLORS = ['#3b82f6','#10b981','#8b5cf6','#f59e0b','#ef4444','#06b6d4','#ec4899','#84cc16']
+
+function getUserAvatarColor(id) {
+  return AVATAR_COLORS[(id - 1) % AVATAR_COLORS.length]
+}
+
+function searchUsers() {
+  userState.keyword = document.getElementById('userSearchKw')?.value || ''
+  userState.role    = document.getElementById('userFilterRole')?.value || ''
+  userState.status  = document.getElementById('userFilterStatus')?.value || ''
+  loadAndRenderUsers()
+}
+
+async function loadAndRenderUsers() {
+  const container = document.getElementById('userListContainer')
+  if (!container) return
+
+  const params = new URLSearchParams()
+  if (userState.keyword) params.set('keyword', userState.keyword)
+  if (userState.role)    params.set('role', userState.role)
+  if (userState.status)  params.set('status', userState.status)
+  params.set('pageSize', '50')
+
+  const res = await apiRequest(\`/api/users?\${params}\`)
+  if (!res.success) { container.innerHTML = '<p class="text-center text-red-400 py-8">加载失败</p>'; return }
+
+  userState.list  = res.data
+  userState.total = res.total
+
+  if (res.data.length === 0) {
+    container.innerHTML = \`
+      <div class="text-center py-16 text-gray-400">
+        <i class="fas fa-users text-4xl mb-3 block"></i>
+        <p class="font-medium">暂无用户</p>
+        <p class="text-sm mt-1">点击右上角"新增用户"添加账号</p>
+      </div>\`
+    return
+  }
+
+  container.innerHTML = \`
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-100 bg-gray-50/50">
+            <th class="text-left py-3 px-5 font-medium text-gray-500 text-xs">用户</th>
+            <th class="text-left py-3 px-4 font-medium text-gray-500 text-xs">联系方式</th>
+            <th class="text-left py-3 px-4 font-medium text-gray-500 text-xs">角色</th>
+            <th class="text-left py-3 px-4 font-medium text-gray-500 text-xs">部门</th>
+            <th class="text-left py-3 px-4 font-medium text-gray-500 text-xs">状态</th>
+            <th class="text-left py-3 px-4 font-medium text-gray-500 text-xs">创建时间</th>
+            <th class="text-right py-3 px-5 font-medium text-gray-500 text-xs">操作</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          \${res.data.map(u => renderUserRow(u)).join('')}
+        </tbody>
+      </table>
+      <div class="px-5 py-3 border-t border-gray-50 text-xs text-gray-400">
+        共 <strong class="text-gray-700">\${res.total}</strong> 位用户
+      </div>
+    </div>
+  \`
+}
+
+function renderUserRow(u) {
+  const role = ROLE_CONFIG[u.role] || { label: u.role, color: 'bg-gray-100 text-gray-600', icon: 'fa-user' }
+  const isActive = u.status === 'active'
+  const avatarColor = getUserAvatarColor(u.id)
+  return \`
+    <tr class="hover:bg-gray-50/50 transition">
+      <td class="py-3.5 px-5">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
+               style="background:\${avatarColor}">
+            \${u.realName?.charAt(0) || u.username?.charAt(0) || '?'}
+          </div>
+          <div>
+            <p class="font-semibold text-gray-800">\${u.realName}</p>
+            <p class="text-xs text-gray-400">@\${u.username}</p>
+          </div>
+        </div>
+      </td>
+      <td class="py-3.5 px-4">
+        <p class="text-gray-700">\${u.email}</p>
+        \${u.phone ? \`<p class="text-xs text-gray-400 mt-0.5">\${u.phone}</p>\` : ''}
+      </td>
+      <td class="py-3.5 px-4">
+        <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full \${role.color}">
+          <i class="fas \${role.icon} text-xs"></i>\${role.label}
+        </span>
+      </td>
+      <td class="py-3.5 px-4 text-gray-600 text-sm">\${u.department || '-'}</td>
+      <td class="py-3.5 px-4">
+        <span class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full \${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}">
+          <span class="w-1.5 h-1.5 rounded-full \${isActive ? 'bg-green-500' : 'bg-gray-400'}"></span>
+          \${isActive ? '已启用' : '已禁用'}
+        </span>
+      </td>
+      <td class="py-3.5 px-4 text-gray-400 text-xs">\${formatDate(u.createdAt)}</td>
+      <td class="py-3.5 px-5 text-right">
+        <div class="flex items-center justify-end gap-1">
+          <button onclick="showUserFormModal(\${u.id})"
+            class="p-2 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition" title="编辑">
+            <i class="fas fa-edit text-xs"></i>
+          </button>
+          <button onclick="toggleUserStatus(\${u.id}, '\${u.status}')"
+            class="p-2 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition"
+            title="\${isActive ? '禁用' : '启用'}">
+            <i class="fas \${isActive ? 'fa-ban' : 'fa-check-circle'} text-xs"></i>
+          </button>
+          \${u.id !== 1 ? \`
+          <button onclick="deleteUser(\${u.id}, '\${u.realName}')"
+            class="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition" title="删除">
+            <i class="fas fa-trash text-xs"></i>
+          </button>\` : ''}
+        </div>
+      </td>
+    </tr>
+  \`
+}
+
+// ==========================================
+// 用户新增 / 编辑 弹窗
+// ==========================================
+async function showUserFormModal(userId) {
+  let userData = null
+  if (userId) {
+    const res = await apiRequest(\`/api/users/\${userId}\`)
+    if (!res.success) { showToast('加载用户失败', 'error'); return }
+    userData = res.data
+  }
+  const u = userData || {}
+  const isEdit = !!userId
+
+  document.getElementById('userFormModal')?.remove()
+  const modal = document.createElement('div')
+  modal.id = 'userFormModal'
+  modal.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,0.55)'
+  modal.innerHTML = \`
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+      <!-- 头部 -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center">
+            <i class="fas fa-user-\${isEdit ? 'edit' : 'plus'} text-blue-600 text-sm"></i>
+          </div>
+          <h3 class="font-bold text-gray-800">\${isEdit ? '编辑用户' : '新增用户'}</h3>
+        </div>
+        <button onclick="document.getElementById('userFormModal').remove()"
+          class="w-8 h-8 rounded-full hover:bg-gray-100 text-gray-400 flex items-center justify-center transition">
+          <i class="fas fa-times text-sm"></i>
+        </button>
+      </div>
+
+      <!-- 表单 -->
+      <div class="p-6 space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">真实姓名 <span class="text-red-500">*</span></label>
+            <input id="uf-realName" type="text" value="\${u.realName||''}" placeholder="如：张三"
+              class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">登录账号 <span class="text-red-500">*</span></label>
+            <input id="uf-username" type="text" value="\${u.username||''}" placeholder="如：hr_zhang"
+              class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              \${isEdit ? 'readonly style="background:#f9fafb;color:#6b7280"' : ''}>
+            \${isEdit ? '<p class="text-xs text-gray-400 mt-1">登录账号不可修改</p>' : ''}
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5">邮箱 <span class="text-red-500">*</span></label>
+          <input id="uf-email" type="email" value="\${u.email||''}" placeholder="example@company.com"
+            class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">手机号</label>
+            <input id="uf-phone" type="text" value="\${u.phone||''}" placeholder="13800138000"
+              class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">所属部门</label>
+            <input id="uf-department" type="text" value="\${u.department||''}" placeholder="如：人力资源部"
+              class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">角色权限 <span class="text-red-500">*</span></label>
+            <select id="uf-role" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="admin"       \${u.role==='admin'?'selected':''}>超级管理员</option>
+              <option value="hr"          \${u.role==='hr'?'selected':''}>HR招聘专员</option>
+              <option value="interviewer" \${u.role==='interviewer'?'selected':''}>面试官</option>
+              <option value="viewer"      \${u.role==='viewer'?'selected':''}>只读查看</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1.5">账号状态</label>
+            <select id="uf-status" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="active"   \${(u.status||'active')==='active'?'selected':''}>已启用</option>
+              <option value="disabled" \${u.status==='disabled'?'selected':''}>已禁用</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1.5">
+            \${isEdit ? '新密码（留空则不修改）' : '登录密码 <span class="text-red-500">*</span>'}
+          </label>
+          <div class="relative">
+            <input id="uf-password" type="password" placeholder="\${isEdit ? '输入新密码（至少6位）' : '至少6位'}"
+              class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10">
+            <button type="button" onclick="toggleUfPwd()" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <i id="uf-eye" class="fas fa-eye text-sm"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 角色说明 -->
+        <div class="bg-gray-50 rounded-xl p-3 text-xs text-gray-500 space-y-1">
+          <p><span class="font-medium text-red-600">超级管理员</span>：所有权限，含用户管理</p>
+          <p><span class="font-medium text-blue-600">HR招聘专员</span>：增删改查候选人、导入简历、面试管理</p>
+          <p><span class="font-medium text-purple-600">面试官</span>：查看候选人、添加面试记录和反馈</p>
+          <p><span class="font-medium text-gray-600">只读查看</span>：仅查看候选人信息，不可修改</p>
+        </div>
+      </div>
+
+      <!-- 底部按钮 -->
+      <div class="flex gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl">
+        <button onclick="document.getElementById('userFormModal').remove()"
+          class="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm hover:bg-white font-medium transition">
+          取消
+        </button>
+        <button onclick="submitUserForm(\${userId || 'null'})"
+          class="flex-1 bg-blue-600 text-white py-2.5 rounded-xl text-sm hover:bg-blue-700 font-medium transition">
+          <i class="fas fa-\${isEdit ? 'save' : 'user-plus'} mr-1.5"></i>\${isEdit ? '保存修改' : '创建用户'}
+        </button>
+      </div>
+    </div>
+  \`
+  document.body.appendChild(modal)
+}
+
+function toggleUfPwd() {
+  const inp = document.getElementById('uf-password')
+  const icon = document.getElementById('uf-eye')
+  if (inp.type === 'password') { inp.type = 'text'; icon.className = 'fas fa-eye-slash text-sm' }
+  else { inp.type = 'password'; icon.className = 'fas fa-eye text-sm' }
+}
+
+async function submitUserForm(editId) {
+  const realName   = document.getElementById('uf-realName')?.value?.trim()
+  const username   = document.getElementById('uf-username')?.value?.trim()
+  const email      = document.getElementById('uf-email')?.value?.trim()
+  const phone      = document.getElementById('uf-phone')?.value?.trim()
+  const department = document.getElementById('uf-department')?.value?.trim()
+  const role       = document.getElementById('uf-role')?.value
+  const status     = document.getElementById('uf-status')?.value
+  const password   = document.getElementById('uf-password')?.value
+
+  if (!realName) { showToast('请填写真实姓名', 'warning'); return }
+  if (!username && editId === 'null') { showToast('请填写登录账号', 'warning'); return }
+  if (!email)    { showToast('请填写邮箱', 'warning'); return }
+  if (editId === 'null' && !password) { showToast('请设置登录密码', 'warning'); return }
+
+  const payload = { realName, email, phone, department, role, status }
+  if (editId === 'null') payload.username = username
+  if (password) payload.password = password
+
+  const isEdit = editId !== 'null'
+  const url    = isEdit ? \`/api/users/\${editId}\` : '/api/users'
+  const method = isEdit ? 'PUT' : 'POST'
+
+  const res = await apiRequest(url, { method, body: JSON.stringify(payload) })
+  if (res.success) {
+    showToast(isEdit ? '用户信息已更新' : '用户创建成功！', 'success')
+    document.getElementById('userFormModal')?.remove()
+    loadAndRenderUsers()
+  } else {
+    showToast(res.message || '操作失败', 'error')
+  }
+}
+
+async function toggleUserStatus(userId, currentStatus) {
+  const action = currentStatus === 'active' ? '禁用' : '启用'
+  if (!confirm(\`确定要\${action}该用户吗？\`)) return
+  const res = await apiRequest(\`/api/users/\${userId}/status\`, { method: 'PATCH' })
+  if (res.success) { showToast(res.message, 'success'); loadAndRenderUsers() }
+  else showToast(res.message || '操作失败', 'error')
+}
+
+async function deleteUser(userId, name) {
+  if (!confirm(\`确定要删除用户「\${name}」吗？此操作不可恢复。\`)) return
+  const res = await apiRequest(\`/api/users/\${userId}\`, { method: 'DELETE' })
+  if (res.success) { showToast('用户已删除', 'success'); loadAndRenderUsers() }
+  else showToast(res.message || '删除失败', 'error')
 }
 
 function toggleApiKeyVisibility() {
@@ -1610,12 +2652,12 @@ function updateAiStatus() {
   const dot = document.getElementById('aiStatusDot')
   const text = document.getElementById('aiStatusText')
   if (state.openaiKey) {
-    dot.className = 'w-2 h-2 rounded-full bg-green-400'
-    text.className = 'text-sm text-green-300'
+    dot.style.background = '#4ade80'
+    text.style.color = '#86efac'
     text.textContent = 'AI就绪'
   } else {
-    dot.className = 'w-2 h-2 rounded-full bg-gray-400'
-    text.className = 'text-sm text-gray-300'
+    dot.style.background = '#9ca3af'
+    text.style.color = '#d1d5db'
     text.textContent = '未配置'
   }
 }

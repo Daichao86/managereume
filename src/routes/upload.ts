@@ -5,6 +5,18 @@ import { Hono } from 'hono'
 import { db } from '../lib/database'
 import { parseResumeWithAI, extractTextFromFile, calculateProfileCompleteness } from '../lib/ai-parser'
 
+// 安全的 ArrayBuffer → Base64 转换（分块处理，避免大文件栈溢出）
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 8192
+  let result = ''
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    result += String.fromCharCode(...chunk)
+  }
+  return btoa(result)
+}
+
 type Bindings = {
   OPENAI_API_KEY: string
   OPENAI_BASE_URL: string
@@ -109,8 +121,19 @@ upload.post('/resume', async (c) => {
         sourceChannel,
         rawResumeText: resumeText.slice(0, 5000),
         resumeFileName: file.name,
+        resumeFileType: file.type || `application/${fileExt}`,
+        resumeFileSize: file.size,
         candidateStatus: 'active',
         matchScore: calculateProfileCompleteness(parseResult)
+      })
+      
+      // 保存原始文件（Base64，分块编码防止栈溢出）
+      const base64 = arrayBufferToBase64(fileBuffer)
+      db.saveResumeFile(candidate.id!, {
+        fileName: file.name,
+        fileType: file.type || `application/${fileExt}`,
+        fileSize: file.size,
+        fileData: base64
       })
       
       // 更新任务状态
