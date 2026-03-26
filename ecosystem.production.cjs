@@ -4,7 +4,7 @@ module.exports = {
     {
       name: 'resume-talent-mgr',
       script: 'server.js',
-      instances: 1,          // 单实例（内存存储不支持多实例共享）
+      instances: 1,
       exec_mode: 'fork',
       watch: false,
       max_memory_restart: '512M',
@@ -12,9 +12,25 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
         HOST: '0.0.0.0',
-        // DATA_DIR: '/data/resume-talent-mgr',  // SQLite 数据目录（默认: ./data）
-        // OPENAI_API_KEY: 'sk-xxx',              // 取消注释并填入
-        // OPENAI_BASE_URL: 'https://api.openai.com/v1'
+
+        // MySQL 配置
+        DB_HOST: '127.0.0.1',
+        DB_PORT: '3306',
+        DB_USER: 'resume_user',
+        DB_PASSWORD: 'your_strong_password',  // ← 修改为你的密码
+        DB_NAME: 'resume_db',
+
+        // MinIO 配置
+        MINIO_ENDPOINT: '127.0.0.1',
+        MINIO_PORT: '9000',
+        MINIO_USE_SSL: 'false',
+        MINIO_ACCESS_KEY: 'minioadmin',       // ← 修改为你的 AccessKey
+        MINIO_SECRET_KEY: 'minioadmin',       // ← 修改为你的 SecretKey
+        MINIO_BUCKET: 'resumes',
+
+        // OpenAI（可选）
+        // OPENAI_API_KEY: 'sk-xxx',
+        // OPENAI_BASE_URL: 'https://api.openai.com/v1',
       },
       error_file: './logs/err.log',
       out_file: './logs/out.log',

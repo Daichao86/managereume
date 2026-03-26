@@ -1,191 +1,32 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
-import Database from "better-sqlite3";
-import path from "path";
-import fs from "fs";
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "resume.db");
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+import mysql from "mysql2/promise";
+import { Client } from "minio";
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || "127.0.0.1",
+  port: parseInt(process.env.DB_PORT || "3306"),
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  database: process.env.DB_NAME || "resume_db",
+  charset: "utf8mb4",
+  timezone: "+08:00",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+async function query(sql, params = []) {
+  const [rows] = await pool.execute(sql, params);
+  return rows;
 }
-const sqliteDb = new Database(DB_PATH);
-sqliteDb.pragma("journal_mode = WAL");
-sqliteDb.pragma("foreign_keys = ON");
-sqliteDb.exec(`
-  CREATE TABLE IF NOT EXISTS candidates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    gender TEXT,
-    age INTEGER,
-    birth_date TEXT,
-    phone TEXT,
-    email TEXT,
-    location TEXT,
-    hometown TEXT,
-    avatar_url TEXT,
-    current_status TEXT,
-    years_of_experience REAL,
-    highest_education TEXT,
-    expected_salary_min INTEGER,
-    expected_salary_max INTEGER,
-    expected_position TEXT,
-    expected_city TEXT,
-    self_evaluation TEXT,
-    linkedin_url TEXT,
-    github_url TEXT,
-    portfolio_url TEXT,
-    source_channel TEXT,
-    candidate_status TEXT DEFAULT 'active',
-    is_blacklist INTEGER DEFAULT 0,
-    hr_notes TEXT,
-    match_score REAL,
-    raw_resume_text TEXT,
-    resume_file_name TEXT,
-    resume_file_type TEXT,
-    resume_file_size INTEGER,
-    resume_uploaded_at TEXT,
-    created_at TEXT DEFAULT (datetime('now','localtime')),
-    updated_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS educations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    school_name TEXT NOT NULL,
-    degree TEXT NOT NULL,
-    major TEXT,
-    start_date TEXT,
-    end_date TEXT,
-    gpa REAL,
-    description TEXT,
-    is_985 INTEGER DEFAULT 0,
-    is_211 INTEGER DEFAULT 0,
-    is_overseas INTEGER DEFAULT 0,
-    sort_order INTEGER DEFAULT 0,
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS work_experiences (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    company_name TEXT NOT NULL,
-    company_size TEXT,
-    company_type TEXT,
-    industry TEXT,
-    position TEXT NOT NULL,
-    job_level TEXT,
-    department TEXT,
-    start_date TEXT,
-    end_date TEXT,
-    is_current INTEGER DEFAULT 0,
-    salary INTEGER,
-    description TEXT,
-    achievements TEXT,
-    sort_order INTEGER DEFAULT 0,
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    project_name TEXT NOT NULL,
-    role TEXT,
-    start_date TEXT,
-    end_date TEXT,
-    tech_stack TEXT,
-    description TEXT,
-    achievements TEXT,
-    project_url TEXT,
-    sort_order INTEGER DEFAULT 0,
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS skills (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    skill_name TEXT NOT NULL,
-    proficiency TEXT,
-    years_used REAL,
-    category TEXT,
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS certifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    cert_name TEXT NOT NULL,
-    issuing_org TEXT,
-    issue_date TEXT,
-    cert_type TEXT,
-    description TEXT,
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS candidate_tags (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    tag_name TEXT NOT NULL,
-    tag_type TEXT,
-    tag_source TEXT,
-    confidence REAL,
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS interview_records (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    interview_type TEXT,
-    interview_round TEXT,
-    interview_date TEXT,
-    interviewer TEXT,
-    result TEXT,
-    score REAL,
-    feedback TEXT,
-    next_step TEXT,
-    created_at TEXT DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS parse_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER,
-    file_name TEXT NOT NULL,
-    file_url TEXT,
-    file_type TEXT,
-    status TEXT DEFAULT 'pending',
-    parse_result TEXT,
-    error_msg TEXT,
-    created_at TEXT DEFAULT (datetime('now','localtime')),
-    updated_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-
-  CREATE TABLE IF NOT EXISTS resume_files (
-    candidate_id INTEGER PRIMARY KEY,
-    file_name TEXT NOT NULL,
-    file_type TEXT NOT NULL,
-    file_size INTEGER NOT NULL,
-    file_data TEXT NOT NULL,
-    uploaded_at TEXT DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS system_users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    real_name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    phone TEXT,
-    role TEXT NOT NULL DEFAULT 'viewer',
-    department TEXT,
-    status TEXT NOT NULL DEFAULT 'active',
-    password TEXT,
-    avatar TEXT,
-    last_login_at TEXT,
-    created_at TEXT DEFAULT (datetime('now','localtime')),
-    updated_at TEXT DEFAULT (datetime('now','localtime'))
-  );
-`);
+async function queryOne(sql, params = []) {
+  const rows = await query(sql, params);
+  return rows[0];
+}
+async function execute(sql, params = []) {
+  const [result] = await pool.execute(sql, params);
+  return result;
+}
 function rowToCandidate(row) {
   return {
     id: row.id,
@@ -218,452 +59,252 @@ function rowToCandidate(row) {
     resumeFileName: row.resume_file_name,
     resumeFileType: row.resume_file_type,
     resumeFileSize: row.resume_file_size,
+    resumeFileKey: row.resume_file_key,
+    // MinIO 对象 key
     resumeUploadedAt: row.resume_uploaded_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
-function rowToEducation(row) {
-  return {
-    id: row.id,
-    candidateId: row.candidate_id,
-    schoolName: row.school_name,
-    degree: row.degree,
-    major: row.major,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    gpa: row.gpa,
-    description: row.description,
-    is985: !!row.is_985,
-    is211: !!row.is_211,
-    isOverseas: !!row.is_overseas,
-    sortOrder: row.sort_order
-  };
+function rowToEducation(r) {
+  return { id: r.id, candidateId: r.candidate_id, schoolName: r.school_name, degree: r.degree, major: r.major, startDate: r.start_date, endDate: r.end_date, gpa: r.gpa, description: r.description, is985: !!r.is_985, is211: !!r.is_211, isOverseas: !!r.is_overseas, sortOrder: r.sort_order };
 }
-function rowToWorkExp(row) {
-  return {
-    id: row.id,
-    candidateId: row.candidate_id,
-    companyName: row.company_name,
-    companySize: row.company_size,
-    companyType: row.company_type,
-    industry: row.industry,
-    position: row.position,
-    jobLevel: row.job_level,
-    department: row.department,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    isCurrent: !!row.is_current,
-    salary: row.salary,
-    description: row.description,
-    achievements: row.achievements,
-    sortOrder: row.sort_order
-  };
+function rowToWorkExp(r) {
+  return { id: r.id, candidateId: r.candidate_id, companyName: r.company_name, companySize: r.company_size, companyType: r.company_type, industry: r.industry, position: r.position, jobLevel: r.job_level, department: r.department, startDate: r.start_date, endDate: r.end_date, isCurrent: !!r.is_current, salary: r.salary, description: r.description, achievements: r.achievements, sortOrder: r.sort_order };
 }
-function rowToSkill(row) {
-  return {
-    id: row.id,
-    candidateId: row.candidate_id,
-    skillName: row.skill_name,
-    proficiency: row.proficiency,
-    yearsUsed: row.years_used,
-    category: row.category
-  };
+function rowToSkill(r) {
+  return { id: r.id, candidateId: r.candidate_id, skillName: r.skill_name, proficiency: r.proficiency, yearsUsed: r.years_used, category: r.category };
 }
-function rowToTag(row) {
-  return {
-    id: row.id,
-    candidateId: row.candidate_id,
-    tagName: row.tag_name,
-    tagType: row.tag_type,
-    tagSource: row.tag_source,
-    confidence: row.confidence
-  };
+function rowToTag(r) {
+  return { id: r.id, candidateId: r.candidate_id, tagName: r.tag_name, tagType: r.tag_type, tagSource: r.tag_source, confidence: r.confidence };
 }
-function rowToProject(row) {
-  return {
-    id: row.id,
-    candidateId: row.candidate_id,
-    projectName: row.project_name,
-    role: row.role,
-    startDate: row.start_date,
-    endDate: row.end_date,
-    techStack: row.tech_stack,
-    description: row.description,
-    achievements: row.achievements,
-    projectUrl: row.project_url,
-    sortOrder: row.sort_order
-  };
+function rowToProject(r) {
+  return { id: r.id, candidateId: r.candidate_id, projectName: r.project_name, role: r.role, startDate: r.start_date, endDate: r.end_date, techStack: r.tech_stack, description: r.description, achievements: r.achievements, projectUrl: r.project_url, sortOrder: r.sort_order };
 }
-function rowToCertification(row) {
-  return {
-    id: row.id,
-    candidateId: row.candidate_id,
-    certName: row.cert_name,
-    issuingOrg: row.issuing_org,
-    issueDate: row.issue_date,
-    certType: row.cert_type,
-    description: row.description
-  };
+function rowToCertification(r) {
+  return { id: r.id, candidateId: r.candidate_id, certName: r.cert_name, issuingOrg: r.issuing_org, issueDate: r.issue_date, certType: r.cert_type, description: r.description };
 }
-function rowToInterview(row) {
-  return {
-    id: row.id,
-    candidateId: row.candidate_id,
-    interviewType: row.interview_type,
-    interviewRound: row.interview_round,
-    interviewDate: row.interview_date,
-    interviewer: row.interviewer,
-    result: row.result,
-    score: row.score,
-    feedback: row.feedback,
-    nextStep: row.next_step,
-    createdAt: row.created_at
-  };
+function rowToInterview(r) {
+  return { id: r.id, candidateId: r.candidate_id, interviewType: r.interview_type, interviewRound: r.interview_round, interviewDate: r.interview_date, interviewer: r.interviewer, result: r.result, score: r.score, feedback: r.feedback, nextStep: r.next_step, createdAt: r.created_at };
 }
-function rowToUser(row, includePassword = false) {
-  const u = {
-    id: row.id,
-    username: row.username,
-    realName: row.real_name,
-    email: row.email,
-    phone: row.phone,
-    role: row.role,
-    department: row.department,
-    status: row.status,
-    avatar: row.avatar,
-    lastLoginAt: row.last_login_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-  if (includePassword) u.password = row.password;
+function rowToUser(r, includePassword = false) {
+  const u = { id: r.id, username: r.username, realName: r.real_name, email: r.email, phone: r.phone, role: r.role, department: r.department, status: r.status, avatar: r.avatar, lastLoginAt: r.last_login_at, createdAt: r.created_at, updatedAt: r.updated_at };
+  if (includePassword) u.password = r.password;
   return u;
 }
-function seedIfEmpty() {
-  const count = sqliteDb.prepare("SELECT COUNT(*) as c FROM candidates").get().c;
-  if (count > 0) return;
-  console.log("📦 首次运行，写入演示数据...");
-  const insertCandidate = sqliteDb.prepare(`
-    INSERT INTO candidates (name,gender,age,phone,email,location,hometown,highest_education,
-      years_of_experience,expected_position,expected_salary_min,expected_salary_max,
-      expected_city,current_status,candidate_status,source_channel,match_score,
-      self_evaluation,created_at,updated_at)
-    VALUES (@name,@gender,@age,@phone,@email,@location,@hometown,@highestEducation,
-      @yearsOfExperience,@expectedPosition,@expectedSalaryMin,@expectedSalaryMax,
-      @expectedCity,@currentStatus,@candidateStatus,@sourceChannel,@matchScore,
-      @selfEvaluation,@createdAt,@updatedAt)
-  `);
-  const demoSeed = sqliteDb.transaction(() => {
-    const c1 = insertCandidate.run({ name: "张伟", gender: "男", age: 28, phone: "13800138001", email: "zhangwei@email.com", location: "北京市朝阳区", hometown: "山东省济南市", highestEducation: "本科", yearsOfExperience: 5, expectedPosition: "高级Java工程师", expectedSalaryMin: 25e3, expectedSalaryMax: 35e3, expectedCity: "北京", currentStatus: "在职", candidateStatus: "active", sourceChannel: "BOSS直聘", matchScore: 92.5, selfEvaluation: "5年Java开发经验，熟练掌握Spring Boot、MyBatis、Redis、MySQL等技术栈，有良好的代码规范和团队协作能力。", createdAt: new Date(Date.now() - 864e5 * 2).toISOString(), updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-    const c2 = insertCandidate.run({ name: "李娜", gender: "女", age: 26, phone: "13900139002", email: "lina@email.com", location: "上海市浦东新区", hometown: "浙江省杭州市", highestEducation: "硕士", yearsOfExperience: 3, expectedPosition: "产品经理", expectedSalaryMin: 2e4, expectedSalaryMax: 3e4, expectedCity: "上海", currentStatus: "在职", candidateStatus: "interviewing", sourceChannel: "智联招聘", matchScore: 88, selfEvaluation: "3年互联网产品经验，擅长用户研究、数据分析，有成熟的产品思维和项目管理能力。", createdAt: new Date(Date.now() - 864e5 * 5).toISOString(), updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-    const c3 = insertCandidate.run({ name: "王强", gender: "男", age: 32, phone: "13700137003", email: "wangqiang@email.com", location: "深圳市南山区", hometown: "广东省广州市", highestEducation: "本科", yearsOfExperience: 8, expectedPosition: "技术总监", expectedSalaryMin: 4e4, expectedSalaryMax: 6e4, expectedCity: "深圳", currentStatus: "离职", candidateStatus: "active", sourceChannel: "猎头推荐", matchScore: 95, selfEvaluation: "8年研发经验，曾带领50人技术团队，主导多个百万级用户产品从0到1的落地，擅长技术架构设计和团队管理。", createdAt: new Date(Date.now() - 864e5 * 1).toISOString(), updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-    const c4 = insertCandidate.run({ name: "陈晓雨", gender: "女", age: 24, phone: "13600136004", email: "chenxiaoyu@email.com", location: "北京市海淀区", hometown: "四川省成都市", highestEducation: "本科", yearsOfExperience: 1, expectedPosition: "前端工程师", expectedSalaryMin: 12e3, expectedSalaryMax: 18e3, expectedCity: "北京/上海", currentStatus: "应届", candidateStatus: "active", sourceChannel: "校园招聘", matchScore: 75.5, selfEvaluation: "985高校计算机专业应届生，熟练掌握Vue.js、React、TypeScript，有多个实习和项目经验。", createdAt: new Date(Date.now() - 864e5 * 10).toISOString(), updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-    const c5 = insertCandidate.run({ name: "刘明", gender: "男", age: 30, phone: "13500135005", email: "liuming@email.com", location: "杭州市西湖区", hometown: "江苏省南京市", highestEducation: "硕士", yearsOfExperience: 6, expectedPosition: "算法工程师", expectedSalaryMin: 35e3, expectedSalaryMax: 5e4, expectedCity: "杭州/北京", currentStatus: "在职", candidateStatus: "active", sourceChannel: "LinkedIn", matchScore: 89, selfEvaluation: "6年机器学习/深度学习经验，发表SCI论文3篇，在推荐系统、NLP领域有丰富的工程实践经验。", createdAt: new Date(Date.now() - 864e5 * 7).toISOString(), updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
-    const ids = [c1.lastInsertRowid, c2.lastInsertRowid, c3.lastInsertRowid, c4.lastInsertRowid, c5.lastInsertRowid];
-    const insEdu = sqliteDb.prepare(`INSERT INTO educations (candidate_id,school_name,degree,major,start_date,end_date,is_985,is_211,sort_order) VALUES (?,?,?,?,?,?,?,?,?)`);
-    insEdu.run(ids[0], "山东大学", "本科", "计算机科学与技术", "2014-09", "2018-07", 1, 1, 0);
-    insEdu.run(ids[1], "复旦大学", "硕士", "工商管理", "2019-09", "2021-07", 1, 1, 0);
-    insEdu.run(ids[1], "上海交通大学", "本科", "工业工程", "2015-09", "2019-07", 1, 1, 1);
-    insEdu.run(ids[2], "华南理工大学", "本科", "软件工程", "2010-09", "2014-07", 1, 1, 0);
-    insEdu.run(ids[3], "北京航空航天大学", "本科", "计算机科学", "2020-09", "2024-07", 1, 1, 0);
-    insEdu.run(ids[4], "浙江大学", "硕士", "计算机应用技术", "2017-09", "2020-07", 1, 1, 0);
-    insEdu.run(ids[4], "南京大学", "本科", "数学与应用数学", "2013-09", "2017-07", 1, 1, 1);
-    const insWork = sqliteDb.prepare(`INSERT INTO work_experiences (candidate_id,company_name,position,industry,company_size,company_type,start_date,end_date,is_current,description,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
-    insWork.run(ids[0], "字节跳动", "Java工程师", "互联网", "2000+", "上市公司", "2021-06", null, 1, "负责抖音电商平台后端开发，主导设计订单系统微服务架构，QPS从1000提升至10000+", 0);
-    insWork.run(ids[0], "滴滴出行", "Java开发工程师", "互联网", "2000+", "上市公司", "2018-07", "2021-05", 0, "负责出行订单系统开发，优化数据库查询性能，响应时间降低40%", 1);
-    insWork.run(ids[1], "阿里巴巴", "高级产品经理", "互联网电商", "2000+", "上市公司", "2022-03", null, 1, "负责淘宝商家运营产品线，管理DAU百万级产品，带领3人产品团队", 0);
-    insWork.run(ids[1], "腾讯", "产品经理", "互联网", "2000+", "上市公司", "2021-07", "2022-02", 0, "负责微信小程序商业化产品设计，推动上线3个核心功能", 1);
-    insWork.run(ids[2], "华为技术", "技术总监", "通信/互联网", "2000+", "上市公司", "2020-03", null, 1, "带领30人研发团队，负责云计算平台核心模块研发", 0);
-    insWork.run(ids[2], "百度", "高级研发工程师", "互联网", "2000+", "上市公司", "2016-07", "2020-02", 0, "负责搜索引擎索引构建系统，日处理数据量100TB+", 1);
-    insWork.run(ids[3], "美团", "前端实习生", "互联网", "2000+", "上市公司", "2023-07", "2023-12", 0, "参与美团外卖商家端小程序开发，独立完成2个功能模块", 0);
-    insWork.run(ids[4], "网易", "算法工程师", "互联网", "2000+", "上市公司", "2020-07", null, 1, "负责游戏推荐系统算法优化，CTR提升15%，用户留存率提升8%", 0);
-    insWork.run(ids[4], "京东", "算法实习生", "互联网电商", "2000+", "上市公司", "2019-07", "2020-06", 0, "参与商品推荐系统建设，实现协同过滤推荐算法优化", 1);
-    const insSkill = sqliteDb.prepare(`INSERT INTO skills (candidate_id,skill_name,proficiency,years_used,category) VALUES (?,?,?,?,?)`);
-    insSkill.run(ids[0], "Java", "精通", 5, "编程语言");
-    insSkill.run(ids[0], "Spring Boot", "精通", 4, "框架");
-    insSkill.run(ids[0], "MySQL", "熟练", 5, "数据库");
-    insSkill.run(ids[0], "Redis", "熟练", 3, "中间件");
-    insSkill.run(ids[0], "Kafka", "了解", 2, "中间件");
-    insSkill.run(ids[1], "Axure", "精通", 3, "工具");
-    insSkill.run(ids[1], "SQL", "熟练", 3, "数据库");
-    insSkill.run(ids[1], "数据分析", "熟练", 3, "技能");
-    insSkill.run(ids[1], "Python", "了解", 2, "编程语言");
-    insSkill.run(ids[2], "Java", "精通", 8, "编程语言");
-    insSkill.run(ids[2], "微服务架构", "精通", 5, "架构");
-    insSkill.run(ids[2], "Kubernetes", "熟练", 4, "运维");
-    insSkill.run(ids[2], "团队管理", "精通", 6, "软技能");
-    insSkill.run(ids[3], "Vue.js", "熟练", 2, "框架");
-    insSkill.run(ids[3], "React", "熟练", 1, "框架");
-    insSkill.run(ids[3], "TypeScript", "熟练", 2, "编程语言");
-    insSkill.run(ids[3], "CSS/Tailwind", "精通", 2, "前端");
-    insSkill.run(ids[4], "Python", "精通", 6, "编程语言");
-    insSkill.run(ids[4], "TensorFlow", "精通", 4, "框架");
-    insSkill.run(ids[4], "PyTorch", "熟练", 3, "框架");
-    insSkill.run(ids[4], "推荐系统", "精通", 4, "领域");
-    insSkill.run(ids[4], "NLP", "熟练", 3, "领域");
-    const insTag = sqliteDb.prepare(`INSERT INTO candidate_tags (candidate_id,tag_name,tag_type,tag_source,confidence) VALUES (?,?,?,?,?)`);
-    insTag.run(ids[0], "Java开发", "skill", "ai", 98);
-    insTag.run(ids[0], "微服务", "skill", "ai", 90);
-    insTag.run(ids[0], "大厂背景", "trait", "ai", 95);
-    insTag.run(ids[0], "985高校", "education", "ai", 100);
-    insTag.run(ids[1], "产品思维", "trait", "ai", 92);
-    insTag.run(ids[1], "数据驱动", "trait", "ai", 88);
-    insTag.run(ids[1], "985高校", "education", "ai", 100);
-    insTag.run(ids[1], "阿里系", "industry", "ai", 100);
-    insTag.run(ids[2], "技术管理", "trait", "ai", 95);
-    insTag.run(ids[2], "架构设计", "skill", "ai", 92);
-    insTag.run(ids[2], "大厂背景", "trait", "ai", 100);
-    insTag.run(ids[2], "高潜力", "trait", "ai", 88);
-    insTag.run(ids[3], "应届生", "education", "ai", 100);
-    insTag.run(ids[3], "前端开发", "skill", "ai", 90);
-    insTag.run(ids[3], "985高校", "education", "ai", 100);
-    insTag.run(ids[4], "算法专家", "skill", "ai", 95);
-    insTag.run(ids[4], "机器学习", "skill", "ai", 98);
-    insTag.run(ids[4], "发表论文", "trait", "ai", 100);
-    insTag.run(ids[4], "985高校", "education", "ai", 100);
-  });
-  demoSeed();
-  const userCount = sqliteDb.prepare("SELECT COUNT(*) as c FROM system_users").get().c;
-  if (userCount === 0) {
-    const insUser = sqliteDb.prepare(`INSERT INTO system_users (username,real_name,email,phone,role,department,status,password,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`);
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    insUser.run("admin", "系统管理员", "admin@company.com", "13800000001", "admin", "技术部", "active", "admin123", new Date(Date.now() - 864e5 * 30).toISOString(), now);
-    insUser.run("hr_zhang", "张招聘", "zhang.hr@company.com", "13800000002", "hr", "人力资源部", "active", "hr123456", new Date(Date.now() - 864e5 * 20).toISOString(), now);
-    insUser.run("interviewer_li", "李面试官", "li.interview@company.com", "13800000003", "interviewer", "研发部", "active", "inter123", new Date(Date.now() - 864e5 * 10).toISOString(), now);
-    insUser.run("viewer_wang", "王只读", "wang.view@company.com", "13800000004", "viewer", "业务部", "disabled", "view1234", new Date(Date.now() - 864e5 * 5).toISOString(), now);
-  }
-  console.log("✅ 演示数据写入完成");
-}
-seedIfEmpty();
-class SQLiteDatabase {
+class MySQLDatabase {
   // ==========================================
-  // 用户管理 CRUD
+  // 用户管理
   // ==========================================
-  getUsers(params = {}) {
-    let sql = "SELECT * FROM system_users WHERE 1=1";
+  async getUsers(params = {}) {
+    const wheres = ["1=1"];
     const args = [];
     if (params.keyword) {
-      sql += " AND (username LIKE ? OR real_name LIKE ? OR email LIKE ? OR department LIKE ?)";
+      wheres.push("(username LIKE ? OR real_name LIKE ? OR email LIKE ? OR department LIKE ?)");
       const kw = `%${params.keyword}%`;
       args.push(kw, kw, kw, kw);
     }
     if (params.role) {
-      sql += " AND role = ?";
+      wheres.push("role = ?");
       args.push(params.role);
     }
     if (params.status) {
-      sql += " AND status = ?";
+      wheres.push("status = ?");
       args.push(params.status);
     }
-    sql += " ORDER BY created_at DESC";
-    const all = sqliteDb.prepare(sql).all(...args).map((r) => rowToUser(r));
-    const total = all.length;
+    const where = wheres.join(" AND ");
+    const total = (await queryOne(`SELECT COUNT(*) as c FROM system_users WHERE ${where}`, args))?.c || 0;
     const page = params.page || 1;
     const pageSize = params.pageSize || 20;
-    const list = all.slice((page - 1) * pageSize, page * pageSize);
-    return { list, total };
+    const offset = (page - 1) * pageSize;
+    const rows = await query(`SELECT * FROM system_users WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`, [...args, pageSize, offset]);
+    return { list: rows.map((r) => rowToUser(r)), total };
   }
-  getUserById(id) {
-    const row = sqliteDb.prepare("SELECT * FROM system_users WHERE id = ?").get(id);
+  async getUserById(id) {
+    const row = await queryOne("SELECT * FROM system_users WHERE id=?", [id]);
     return row ? rowToUser(row) : void 0;
   }
-  getUserByUsername(username) {
-    const row = sqliteDb.prepare("SELECT * FROM system_users WHERE username = ?").get(username);
+  async getUserByUsername(username) {
+    const row = await queryOne("SELECT * FROM system_users WHERE username=?", [username]);
     return row ? rowToUser(row, true) : void 0;
   }
-  createUser(data) {
-    const existing = sqliteDb.prepare("SELECT id FROM system_users WHERE username = ?").get(data.username);
-    if (existing) return { error: `登录名 "${data.username}" 已存在` };
-    const emailExists = sqliteDb.prepare("SELECT id FROM system_users WHERE email = ?").get(data.email);
-    if (emailExists) return { error: `邮箱 "${data.email}" 已被使用` };
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const result = sqliteDb.prepare(`
-      INSERT INTO system_users (username,real_name,email,phone,role,department,status,password,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
-    `).run(data.username, data.realName, data.email, data.phone || null, data.role, data.department || null, data.status || "active", data.password || null, now, now);
-    return { user: this.getUserById(result.lastInsertRowid) };
+  async createUser(data) {
+    const dup = await queryOne("SELECT id FROM system_users WHERE username=?", [data.username]);
+    if (dup) return { error: `登录名 "${data.username}" 已存在` };
+    const emailDup = await queryOne("SELECT id FROM system_users WHERE email=?", [data.email]);
+    if (emailDup) return { error: `邮箱 "${data.email}" 已被使用` };
+    const result = await execute(
+      "INSERT INTO system_users (username,real_name,email,phone,role,department,status,password) VALUES (?,?,?,?,?,?,?,?)",
+      [data.username, data.realName, data.email, data.phone || null, data.role, data.department || null, data.status || "active", data.password || null]
+    );
+    return { user: await this.getUserById(result.insertId) };
   }
-  updateUser(id, data) {
-    const existing = sqliteDb.prepare("SELECT * FROM system_users WHERE id = ?").get(id);
+  async updateUser(id, data) {
+    const existing = await queryOne("SELECT * FROM system_users WHERE id=?", [id]);
     if (!existing) return { error: "用户不存在" };
     if (data.username && data.username !== existing.username) {
-      const dup = sqliteDb.prepare("SELECT id FROM system_users WHERE username = ? AND id != ?").get(data.username, id);
+      const dup = await queryOne("SELECT id FROM system_users WHERE username=? AND id!=?", [data.username, id]);
       if (dup) return { error: `登录名 "${data.username}" 已存在` };
     }
     if (data.email && data.email !== existing.email) {
-      const dup = sqliteDb.prepare("SELECT id FROM system_users WHERE email = ? AND id != ?").get(data.email, id);
+      const dup = await queryOne("SELECT id FROM system_users WHERE email=? AND id!=?", [data.email, id]);
       if (dup) return { error: `邮箱 "${data.email}" 已被使用` };
     }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    sqliteDb.prepare(`
+    await execute(
+      `
       UPDATE system_users SET
         username=COALESCE(?,username), real_name=COALESCE(?,real_name),
         email=COALESCE(?,email), phone=COALESCE(?,phone),
         role=COALESCE(?,role), department=COALESCE(?,department),
-        status=COALESCE(?,status), password=COALESCE(?,password),
-        updated_at=?
-      WHERE id=?
-    `).run(
-      data.username || null,
-      data.realName || null,
-      data.email || null,
-      data.phone || null,
-      data.role || null,
-      data.department || null,
-      data.status || null,
-      data.password || null,
-      now,
-      id
+        status=COALESCE(?,status), password=COALESCE(?,password)
+      WHERE id=?`,
+      [
+        data.username || null,
+        data.realName || null,
+        data.email || null,
+        data.phone || null,
+        data.role || null,
+        data.department || null,
+        data.status || null,
+        data.password || null,
+        id
+      ]
     );
-    return { user: this.getUserById(id) };
+    return { user: await this.getUserById(id) };
   }
-  toggleUserStatus(id) {
-    const u = sqliteDb.prepare("SELECT status FROM system_users WHERE id=?").get(id);
+  async toggleUserStatus(id) {
+    const u = await queryOne("SELECT status FROM system_users WHERE id=?", [id]);
     if (!u) return { error: "用户不存在" };
     return this.updateUser(id, { status: u.status === "active" ? "disabled" : "active" });
   }
-  deleteUser(id) {
-    const result = sqliteDb.prepare("DELETE FROM system_users WHERE id=?").run(id);
-    return result.changes > 0;
+  async deleteUser(id) {
+    const r = await execute("DELETE FROM system_users WHERE id=?", [id]);
+    return r.affectedRows > 0;
   }
-  getUserCount() {
-    return sqliteDb.prepare("SELECT COUNT(*) as c FROM system_users").get().c;
+  async getUserCount() {
+    return (await queryOne("SELECT COUNT(*) as c FROM system_users"))?.c || 0;
   }
   // ==========================================
-  // 候选人列表查询（多条件过滤）
+  // 候选人列表（多条件过滤）
   // ==========================================
-  getCandidates(params = {}) {
-    let sql = "SELECT DISTINCT c.* FROM candidates c";
-    const joins = [];
-    const where = ["1=1"];
+  async getCandidates(params = {}) {
+    const wheres = ["1=1"];
     const args = [];
-    const needSkill = !!params.skillKeyword;
-    const needWork = !!params.companyKeyword || !!params.industryKeyword;
-    const needEdu = !!params.schoolKeyword || !!params.majorKeyword;
-    if (needSkill) {
-      joins.push("LEFT JOIN skills sk ON sk.candidate_id = c.id");
-    }
-    if (needWork) {
-      joins.push("LEFT JOIN work_experiences we ON we.candidate_id = c.id");
-    }
-    if (needEdu) {
-      joins.push("LEFT JOIN educations ed ON ed.candidate_id = c.id");
-    }
-    if (joins.length) sql += " " + joins.join(" ");
+    const joins = [];
     if (params.keyword) {
+      wheres.push("(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ? OR c.expected_position LIKE ? OR c.self_evaluation LIKE ? OR c.location LIKE ? OR c.hr_notes LIKE ?)");
       const kw = `%${params.keyword}%`;
-      where.push("(c.name LIKE ? OR c.email LIKE ? OR c.phone LIKE ? OR c.expected_position LIKE ? OR c.self_evaluation LIKE ? OR c.location LIKE ? OR c.hr_notes LIKE ?)");
       args.push(kw, kw, kw, kw, kw, kw, kw);
     }
     if (params.name) {
-      where.push("c.name LIKE ?");
+      wheres.push("c.name LIKE ?");
       args.push(`%${params.name}%`);
     }
     if (params.phone) {
-      where.push("c.phone LIKE ?");
+      wheres.push("c.phone LIKE ?");
       args.push(`%${params.phone}%`);
     }
     if (params.email) {
-      where.push("c.email LIKE ?");
+      wheres.push("c.email LIKE ?");
       args.push(`%${params.email}%`);
     }
     if (params.gender) {
-      where.push("c.gender = ?");
+      wheres.push("c.gender = ?");
       args.push(params.gender);
     }
     if (params.minAge) {
-      where.push("c.age >= ?");
+      wheres.push("c.age >= ?");
       args.push(Number(params.minAge));
     }
     if (params.maxAge) {
-      where.push("c.age <= ?");
+      wheres.push("c.age <= ?");
       args.push(Number(params.maxAge));
     }
     if (params.location) {
-      where.push("c.location LIKE ?");
+      wheres.push("c.location LIKE ?");
       args.push(`%${params.location}%`);
     }
     if (params.expectedPosition) {
-      where.push("c.expected_position LIKE ?");
+      wheres.push("c.expected_position LIKE ?");
       args.push(`%${params.expectedPosition}%`);
     }
     if (params.expectedCity) {
-      where.push("c.expected_city LIKE ?");
+      wheres.push("c.expected_city LIKE ?");
       args.push(`%${params.expectedCity}%`);
     }
     if (params.currentStatus) {
-      where.push("c.current_status = ?");
+      wheres.push("c.current_status = ?");
       args.push(params.currentStatus);
     }
     if (params.candidateStatus) {
-      where.push("c.candidate_status = ?");
+      wheres.push("c.candidate_status = ?");
       args.push(params.candidateStatus);
     }
     if (params.highestEducation) {
-      where.push("c.highest_education = ?");
+      wheres.push("c.highest_education = ?");
       args.push(params.highestEducation);
     }
     if (params.sourceChannel) {
-      where.push("c.source_channel = ?");
+      wheres.push("c.source_channel = ?");
       args.push(params.sourceChannel);
     }
     if (params.minExperience !== void 0 && params.minExperience !== "") {
-      where.push("c.years_of_experience >= ?");
+      wheres.push("c.years_of_experience >= ?");
       args.push(Number(params.minExperience));
     }
     if (params.maxExperience !== void 0 && params.maxExperience !== "") {
-      where.push("c.years_of_experience <= ?");
+      wheres.push("c.years_of_experience <= ?");
       args.push(Number(params.maxExperience));
     }
     if (params.minSalary !== void 0 && params.minSalary !== "") {
-      where.push("c.expected_salary_max >= ?");
+      wheres.push("c.expected_salary_max >= ?");
       args.push(Number(params.minSalary));
     }
     if (params.maxSalary !== void 0 && params.maxSalary !== "") {
-      where.push("c.expected_salary_min <= ?");
+      wheres.push("c.expected_salary_min <= ?");
       args.push(Number(params.maxSalary));
     }
     if (params.minMatchScore !== void 0 && params.minMatchScore !== "") {
-      where.push("c.match_score >= ?");
+      wheres.push("c.match_score >= ?");
       args.push(Number(params.minMatchScore));
     }
     if (params.isBlacklist !== void 0 && params.isBlacklist !== "") {
-      where.push("c.is_blacklist = ?");
+      wheres.push("c.is_blacklist = ?");
       args.push(params.isBlacklist === "true" || params.isBlacklist === true ? 1 : 0);
     }
     if (params.hrNotesKeyword) {
-      where.push("c.hr_notes LIKE ?");
+      wheres.push("c.hr_notes LIKE ?");
       args.push(`%${params.hrNotesKeyword}%`);
     }
     if (params.hasResume === "true" || params.hasResume === true) {
-      where.push("EXISTS (SELECT 1 FROM resume_files rf WHERE rf.candidate_id = c.id)");
+      wheres.push("c.resume_file_key IS NOT NULL");
     } else if (params.hasResume === "false" || params.hasResume === false) {
-      where.push("NOT EXISTS (SELECT 1 FROM resume_files rf WHERE rf.candidate_id = c.id)");
+      wheres.push("c.resume_file_key IS NULL");
     }
-    if (needSkill) {
+    if (params.skillKeyword) {
       const skillKws = params.skillKeyword.split(",").map((s) => s.trim()).filter(Boolean);
       skillKws.forEach((kw) => {
-        where.push("EXISTS (SELECT 1 FROM skills sk2 WHERE sk2.candidate_id = c.id AND sk2.skill_name LIKE ?)");
+        wheres.push("EXISTS (SELECT 1 FROM skills sk WHERE sk.candidate_id=c.id AND sk.skill_name LIKE ?)");
         args.push(`%${kw}%`);
       });
     }
     if (params.companyKeyword) {
-      where.push("we.company_name LIKE ?");
+      wheres.push("EXISTS (SELECT 1 FROM work_experiences we WHERE we.candidate_id=c.id AND we.company_name LIKE ?)");
       args.push(`%${params.companyKeyword}%`);
     }
     if (params.industryKeyword) {
-      where.push("we.industry LIKE ?");
+      wheres.push("EXISTS (SELECT 1 FROM work_experiences we WHERE we.candidate_id=c.id AND we.industry LIKE ?)");
       args.push(`%${params.industryKeyword}%`);
     }
     if (params.schoolKeyword) {
-      where.push("ed.school_name LIKE ?");
+      wheres.push("EXISTS (SELECT 1 FROM educations ed WHERE ed.candidate_id=c.id AND ed.school_name LIKE ?)");
       args.push(`%${params.schoolKeyword}%`);
     }
     if (params.majorKeyword) {
-      where.push("ed.major LIKE ?");
+      wheres.push("EXISTS (SELECT 1 FROM educations ed WHERE ed.candidate_id=c.id AND ed.major LIKE ?)");
       args.push(`%${params.majorKeyword}%`);
     }
-    sql += " WHERE " + where.join(" AND ");
+    const where = wheres.join(" AND ");
     const sortMap = {
       createdAt: "c.created_at",
       matchScore: "c.match_score",
@@ -672,88 +313,89 @@ class SQLiteDatabase {
       age: "c.age"
     };
     const sortCol = sortMap[params.sortBy] || "c.created_at";
-    const sortDir = params.sortOrder === "asc" ? "ASC" : "DESC";
-    sql += ` ORDER BY ${sortCol} ${sortDir}`;
-    const allRows = sqliteDb.prepare(sql).all(...args);
-    const total = allRows.length;
+    const sortDir = (params.sortOrder || "desc").toUpperCase() === "ASC" ? "ASC" : "DESC";
+    const total = (await queryOne(`SELECT COUNT(*) as c FROM candidates c ${joins.join(" ")} WHERE ${where}`, args))?.c || 0;
     const page = params.page || 1;
     const pageSize = params.pageSize || 10;
-    const pageRows = allRows.slice((page - 1) * pageSize, page * pageSize);
-    const list = pageRows.map((row) => {
+    const offset = (page - 1) * pageSize;
+    const rows = await query(
+      `SELECT c.* FROM candidates c ${joins.join(" ")} WHERE ${where} ORDER BY ${sortCol} ${sortDir} LIMIT ? OFFSET ?`,
+      [...args, pageSize, offset]
+    );
+    const list = [];
+    for (const row of rows) {
       const c = rowToCandidate(row);
-      c.tags = sqliteDb.prepare("SELECT * FROM candidate_tags WHERE candidate_id=? ORDER BY id").all(c.id).map(rowToTag);
-      c.skills = sqliteDb.prepare("SELECT * FROM skills WHERE candidate_id=? ORDER BY id").all(c.id).map(rowToSkill);
-      return c;
-    });
+      c.tags = (await query("SELECT * FROM candidate_tags WHERE candidate_id=?", [c.id])).map(rowToTag);
+      c.skills = (await query("SELECT * FROM skills WHERE candidate_id=?", [c.id])).map(rowToSkill);
+      list.push(c);
+    }
     return { list, total };
   }
-  getCandidateById(id) {
-    const row = sqliteDb.prepare("SELECT * FROM candidates WHERE id=?").get(id);
+  async getCandidateById(id) {
+    const row = await queryOne("SELECT * FROM candidates WHERE id=?", [id]);
     if (!row) return void 0;
     const c = rowToCandidate(row);
-    c.educations = sqliteDb.prepare("SELECT * FROM educations WHERE candidate_id=? ORDER BY sort_order").all(id).map(rowToEducation);
-    c.workExperiences = sqliteDb.prepare("SELECT * FROM work_experiences WHERE candidate_id=? ORDER BY sort_order").all(id).map(rowToWorkExp);
-    c.projects = sqliteDb.prepare("SELECT * FROM projects WHERE candidate_id=? ORDER BY sort_order").all(id).map(rowToProject);
-    c.skills = sqliteDb.prepare("SELECT * FROM skills WHERE candidate_id=? ORDER BY id").all(id).map(rowToSkill);
-    c.certifications = sqliteDb.prepare("SELECT * FROM certifications WHERE candidate_id=? ORDER BY id").all(id).map(rowToCertification);
-    c.tags = sqliteDb.prepare("SELECT * FROM candidate_tags WHERE candidate_id=? ORDER BY id").all(id).map(rowToTag);
-    c.interviewRecords = sqliteDb.prepare("SELECT * FROM interview_records WHERE candidate_id=? ORDER BY created_at DESC").all(id).map(rowToInterview);
+    c.educations = (await query("SELECT * FROM educations WHERE candidate_id=? ORDER BY sort_order", [id])).map(rowToEducation);
+    c.workExperiences = (await query("SELECT * FROM work_experiences WHERE candidate_id=? ORDER BY sort_order", [id])).map(rowToWorkExp);
+    c.projects = (await query("SELECT * FROM projects WHERE candidate_id=? ORDER BY sort_order", [id])).map(rowToProject);
+    c.skills = (await query("SELECT * FROM skills WHERE candidate_id=?", [id])).map(rowToSkill);
+    c.certifications = (await query("SELECT * FROM certifications WHERE candidate_id=?", [id])).map(rowToCertification);
+    c.tags = (await query("SELECT * FROM candidate_tags WHERE candidate_id=?", [id])).map(rowToTag);
+    c.interviewRecords = (await query("SELECT * FROM interview_records WHERE candidate_id=? ORDER BY created_at DESC", [id])).map(rowToInterview);
     return c;
   }
-  createCandidate(data) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const result = sqliteDb.prepare(`
+  async createCandidate(data) {
+    const result = await execute(
+      `
       INSERT INTO candidates (name,gender,age,birth_date,phone,email,location,hometown,
         avatar_url,current_status,years_of_experience,highest_education,
         expected_salary_min,expected_salary_max,expected_position,expected_city,
         self_evaluation,linkedin_url,github_url,portfolio_url,source_channel,
-        candidate_status,is_blacklist,hr_notes,match_score,raw_resume_text,
-        created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(
-      data.name,
-      data.gender || null,
-      data.age || null,
-      data.birthDate || null,
-      data.phone || null,
-      data.email || null,
-      data.location || null,
-      data.hometown || null,
-      data.avatarUrl || null,
-      data.currentStatus || null,
-      data.yearsOfExperience || null,
-      data.highestEducation || null,
-      data.expectedSalaryMin || null,
-      data.expectedSalaryMax || null,
-      data.expectedPosition || null,
-      data.expectedCity || null,
-      data.selfEvaluation || null,
-      data.linkedinUrl || null,
-      data.githubUrl || null,
-      data.portfolioUrl || null,
-      data.sourceChannel || null,
-      data.candidateStatus || "active",
-      data.isBlacklist ? 1 : 0,
-      data.hrNotes || null,
-      data.matchScore || null,
-      data.rawResumeText || null,
-      now,
-      now
+        candidate_status,is_blacklist,hr_notes,match_score,raw_resume_text)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        data.name,
+        data.gender || null,
+        data.age || null,
+        data.birthDate || null,
+        data.phone || null,
+        data.email || null,
+        data.location || null,
+        data.hometown || null,
+        data.avatarUrl || null,
+        data.currentStatus || null,
+        data.yearsOfExperience || null,
+        data.highestEducation || null,
+        data.expectedSalaryMin || null,
+        data.expectedSalaryMax || null,
+        data.expectedPosition || null,
+        data.expectedCity || null,
+        data.selfEvaluation || null,
+        data.linkedinUrl || null,
+        data.githubUrl || null,
+        data.portfolioUrl || null,
+        data.sourceChannel || null,
+        data.candidateStatus || "active",
+        data.isBlacklist ? 1 : 0,
+        data.hrNotes || null,
+        data.matchScore || null,
+        data.rawResumeText || null
+      ]
     );
-    const id = result.lastInsertRowid;
-    if (data.educations?.length) this._saveEducations(id, data.educations);
-    if (data.workExperiences?.length) this._saveWorkExperiences(id, data.workExperiences);
-    if (data.projects?.length) this._saveProjects(id, data.projects);
-    if (data.skills?.length) this._saveSkills(id, data.skills);
-    if (data.certifications?.length) this._saveCertifications(id, data.certifications);
-    if (data.tags?.length) this._saveTags(id, data.tags);
-    return this.getCandidateById(id);
+    const id = result.insertId;
+    if (data.educations?.length) await this._saveEducations(id, data.educations);
+    if (data.workExperiences?.length) await this._saveWorkExperiences(id, data.workExperiences);
+    if (data.projects?.length) await this._saveProjects(id, data.projects);
+    if (data.skills?.length) await this._saveSkills(id, data.skills);
+    if (data.certifications?.length) await this._saveCertifications(id, data.certifications);
+    if (data.tags?.length) await this._saveTags(id, data.tags);
+    return await this.getCandidateById(id);
   }
-  updateCandidate(id, data) {
-    const existing = sqliteDb.prepare("SELECT id FROM candidates WHERE id=?").get(id);
+  async updateCandidate(id, data) {
+    const existing = await queryOne("SELECT id FROM candidates WHERE id=?", [id]);
     if (!existing) return void 0;
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    sqliteDb.prepare(`
+    await execute(
+      `
       UPDATE candidates SET
         name=COALESCE(?,name), gender=COALESCE(?,gender), age=COALESCE(?,age),
         phone=COALESCE(?,phone), email=COALESCE(?,email), location=COALESCE(?,location),
@@ -770,348 +412,402 @@ class SQLiteDatabase {
         is_blacklist=COALESCE(?,is_blacklist),
         hr_notes=COALESCE(?,hr_notes),
         match_score=COALESCE(?,match_score),
-        raw_resume_text=COALESCE(?,raw_resume_text),
-        updated_at=?
-      WHERE id=?
-    `).run(
-      data.name || null,
-      data.gender || null,
-      data.age || null,
-      data.phone || null,
-      data.email || null,
-      data.location || null,
-      data.hometown || null,
-      data.currentStatus || null,
-      data.yearsOfExperience || null,
-      data.highestEducation || null,
-      data.expectedSalaryMin || null,
-      data.expectedSalaryMax || null,
-      data.expectedPosition || null,
-      data.expectedCity || null,
-      data.selfEvaluation || null,
-      data.sourceChannel || null,
-      data.candidateStatus || null,
-      data.isBlacklist !== void 0 ? data.isBlacklist ? 1 : 0 : null,
-      data.hrNotes || null,
-      data.matchScore || null,
-      data.rawResumeText || null,
-      now,
-      id
+        raw_resume_text=COALESCE(?,raw_resume_text)
+      WHERE id=?`,
+      [
+        data.name || null,
+        data.gender || null,
+        data.age || null,
+        data.phone || null,
+        data.email || null,
+        data.location || null,
+        data.hometown || null,
+        data.currentStatus || null,
+        data.yearsOfExperience || null,
+        data.highestEducation || null,
+        data.expectedSalaryMin || null,
+        data.expectedSalaryMax || null,
+        data.expectedPosition || null,
+        data.expectedCity || null,
+        data.selfEvaluation || null,
+        data.sourceChannel || null,
+        data.candidateStatus || null,
+        data.isBlacklist !== void 0 ? data.isBlacklist ? 1 : 0 : null,
+        data.hrNotes || null,
+        data.matchScore || null,
+        data.rawResumeText || null,
+        id
+      ]
     );
     if (data.educations !== void 0) {
-      sqliteDb.prepare("DELETE FROM educations WHERE candidate_id=?").run(id);
-      this._saveEducations(id, data.educations);
+      await execute("DELETE FROM educations WHERE candidate_id=?", [id]);
+      await this._saveEducations(id, data.educations);
     }
     if (data.workExperiences !== void 0) {
-      sqliteDb.prepare("DELETE FROM work_experiences WHERE candidate_id=?").run(id);
-      this._saveWorkExperiences(id, data.workExperiences);
+      await execute("DELETE FROM work_experiences WHERE candidate_id=?", [id]);
+      await this._saveWorkExperiences(id, data.workExperiences);
     }
     if (data.skills !== void 0) {
-      sqliteDb.prepare("DELETE FROM skills WHERE candidate_id=?").run(id);
-      this._saveSkills(id, data.skills);
+      await execute("DELETE FROM skills WHERE candidate_id=?", [id]);
+      await this._saveSkills(id, data.skills);
     }
     if (data.tags !== void 0) {
-      sqliteDb.prepare("DELETE FROM candidate_tags WHERE candidate_id=?").run(id);
-      this._saveTags(id, data.tags);
+      await execute("DELETE FROM candidate_tags WHERE candidate_id=?", [id]);
+      await this._saveTags(id, data.tags);
     }
     return this.getCandidateById(id);
   }
-  deleteCandidate(id) {
-    const result = sqliteDb.prepare("DELETE FROM candidates WHERE id=?").run(id);
-    return result.changes > 0;
+  async deleteCandidate(id) {
+    const r = await execute("DELETE FROM candidates WHERE id=?", [id]);
+    return r.affectedRows > 0;
   }
   // ==========================================
   // 关联数据写入
   // ==========================================
-  _saveEducations(candidateId, items) {
-    const ins = sqliteDb.prepare(`INSERT INTO educations (candidate_id,school_name,degree,major,start_date,end_date,gpa,description,is_985,is_211,is_overseas,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
-    items.forEach((e, i) => ins.run(candidateId, e.schoolName, e.degree, e.major || null, e.startDate || null, e.endDate || null, e.gpa || null, e.description || null, e.is985 ? 1 : 0, e.is211 ? 1 : 0, e.isOverseas ? 1 : 0, i));
+  async _saveEducations(cid, items) {
+    for (let i = 0; i < items.length; i++) {
+      const e = items[i];
+      await execute(
+        "INSERT INTO educations (candidate_id,school_name,degree,major,start_date,end_date,gpa,description,is_985,is_211,is_overseas,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        [cid, e.schoolName, e.degree, e.major || null, e.startDate || null, e.endDate || null, e.gpa || null, e.description || null, e.is985 ? 1 : 0, e.is211 ? 1 : 0, e.isOverseas ? 1 : 0, i]
+      );
+    }
   }
-  _saveWorkExperiences(candidateId, items) {
-    const ins = sqliteDb.prepare(`INSERT INTO work_experiences (candidate_id,company_name,company_size,company_type,industry,position,job_level,department,start_date,end_date,is_current,salary,description,achievements,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-    items.forEach((w, i) => ins.run(candidateId, w.companyName, w.companySize || null, w.companyType || null, w.industry || null, w.position, w.jobLevel || null, w.department || null, w.startDate || null, w.endDate || null, w.isCurrent ? 1 : 0, w.salary || null, w.description || null, w.achievements || null, i));
+  async _saveWorkExperiences(cid, items) {
+    for (let i = 0; i < items.length; i++) {
+      const w = items[i];
+      await execute(
+        "INSERT INTO work_experiences (candidate_id,company_name,company_size,company_type,industry,position,job_level,department,start_date,end_date,is_current,salary,description,achievements,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [cid, w.companyName, w.companySize || null, w.companyType || null, w.industry || null, w.position, w.jobLevel || null, w.department || null, w.startDate || null, w.endDate || null, w.isCurrent ? 1 : 0, w.salary || null, w.description || null, w.achievements || null, i]
+      );
+    }
   }
-  _saveProjects(candidateId, items) {
-    const ins = sqliteDb.prepare(`INSERT INTO projects (candidate_id,project_name,role,start_date,end_date,tech_stack,description,achievements,project_url,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?)`);
-    items.forEach((p, i) => ins.run(candidateId, p.projectName, p.role || null, p.startDate || null, p.endDate || null, p.techStack || null, p.description || null, p.achievements || null, p.projectUrl || null, i));
+  async _saveProjects(cid, items) {
+    for (let i = 0; i < items.length; i++) {
+      const p = items[i];
+      await execute(
+        "INSERT INTO projects (candidate_id,project_name,role,start_date,end_date,tech_stack,description,achievements,project_url,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [cid, p.projectName, p.role || null, p.startDate || null, p.endDate || null, p.techStack || null, p.description || null, p.achievements || null, p.projectUrl || null, i]
+      );
+    }
   }
-  _saveSkills(candidateId, items) {
-    const ins = sqliteDb.prepare(`INSERT INTO skills (candidate_id,skill_name,proficiency,years_used,category) VALUES (?,?,?,?,?)`);
-    items.forEach((s) => ins.run(candidateId, s.skillName, s.proficiency || null, s.yearsUsed || null, s.category || null));
+  async _saveSkills(cid, items) {
+    for (const s of items) {
+      await execute(
+        "INSERT INTO skills (candidate_id,skill_name,proficiency,years_used,category) VALUES (?,?,?,?,?)",
+        [cid, s.skillName, s.proficiency || null, s.yearsUsed || null, s.category || null]
+      );
+    }
   }
-  _saveCertifications(candidateId, items) {
-    const ins = sqliteDb.prepare(`INSERT INTO certifications (candidate_id,cert_name,issuing_org,issue_date,cert_type,description) VALUES (?,?,?,?,?,?)`);
-    items.forEach((c) => ins.run(candidateId, c.certName, c.issuingOrg || null, c.issueDate || null, c.certType || null, c.description || null));
+  async _saveCertifications(cid, items) {
+    for (const c of items) {
+      await execute(
+        "INSERT INTO certifications (candidate_id,cert_name,issuing_org,issue_date,cert_type,description) VALUES (?,?,?,?,?,?)",
+        [cid, c.certName, c.issuingOrg || null, c.issueDate || null, c.certType || null, c.description || null]
+      );
+    }
   }
-  _saveTags(candidateId, items) {
-    const ins = sqliteDb.prepare(`INSERT INTO candidate_tags (candidate_id,tag_name,tag_type,tag_source,confidence) VALUES (?,?,?,?,?)`);
-    items.forEach((t) => ins.run(candidateId, t.tagName, t.tagType || null, t.tagSource || null, t.confidence || null));
+  async _saveTags(cid, items) {
+    for (const t of items) {
+      await execute(
+        "INSERT INTO candidate_tags (candidate_id,tag_name,tag_type,tag_source,confidence) VALUES (?,?,?,?,?)",
+        [cid, t.tagName, t.tagType || null, t.tagSource || null, t.confidence || null]
+      );
+    }
   }
   // ==========================================
   // 面试记录
   // ==========================================
-  addInterviewRecord(candidateId, data) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const result = sqliteDb.prepare(`
-      INSERT INTO interview_records (candidate_id,interview_type,interview_round,interview_date,interviewer,result,score,feedback,next_step,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
-    `).run(candidateId, data.interviewType || null, data.interviewRound || null, data.interviewDate || null, data.interviewer || null, data.result || null, data.score || null, data.feedback || null, data.nextStep || null, now);
-    return { ...data, id: result.lastInsertRowid, candidateId, createdAt: now };
+  async addInterviewRecord(candidateId, data) {
+    const result = await execute(
+      "INSERT INTO interview_records (candidate_id,interview_type,interview_round,interview_date,interviewer,result,score,feedback,next_step) VALUES (?,?,?,?,?,?,?,?,?)",
+      [
+        candidateId,
+        data.interviewType || null,
+        data.interviewRound || null,
+        data.interviewDate || null,
+        data.interviewer || null,
+        data.result || null,
+        data.score || null,
+        data.feedback || null,
+        data.nextStep || null
+      ]
+    );
+    return { ...data, id: result.insertId, candidateId, createdAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
   // ==========================================
   // 解析任务
   // ==========================================
-  createParseTask(data) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const result = sqliteDb.prepare(`
-      INSERT INTO parse_tasks (candidate_id,file_name,file_url,file_type,status,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?)
-    `).run(data.candidateId || null, data.fileName, data.fileUrl || null, data.fileType || null, data.status || "pending", now, now);
-    return { ...data, id: result.lastInsertRowid, createdAt: now };
+  async createParseTask(data) {
+    const result = await execute(
+      "INSERT INTO parse_tasks (candidate_id,file_name,file_url,file_type,status) VALUES (?,?,?,?,?)",
+      [data.candidateId || null, data.fileName, data.fileUrl || null, data.fileType || null, data.status || "pending"]
+    );
+    return { ...data, id: result.insertId, createdAt: (/* @__PURE__ */ new Date()).toISOString() };
   }
-  updateParseTask(id, data) {
-    sqliteDb.prepare(`
-      UPDATE parse_tasks SET status=COALESCE(?,status), parse_result=COALESCE(?,parse_result),
-        error_msg=COALESCE(?,error_msg), candidate_id=COALESCE(?,candidate_id),
-        updated_at=? WHERE id=?
-    `).run(data.status || null, data.parseResult || null, data.errorMsg || null, data.candidateId || null, (/* @__PURE__ */ new Date()).toISOString(), id);
+  async updateParseTask(id, data) {
+    await execute(
+      "UPDATE parse_tasks SET status=COALESCE(?,status), parse_result=COALESCE(?,parse_result), error_msg=COALESCE(?,error_msg), candidate_id=COALESCE(?,candidate_id) WHERE id=?",
+      [data.status || null, data.parseResult || null, data.errorMsg || null, data.candidateId || null, id]
+    );
   }
-  getParseTask(id) {
-    const row = sqliteDb.prepare("SELECT * FROM parse_tasks WHERE id=?").get(id);
-    if (!row) return void 0;
-    return { id: row.id, candidateId: row.candidate_id, fileName: row.file_name, fileUrl: row.file_url, fileType: row.file_type, status: row.status, parseResult: row.parse_result, errorMsg: row.error_msg, createdAt: row.created_at, updatedAt: row.updated_at };
+  async getParseTask(id) {
+    const r = await queryOne("SELECT * FROM parse_tasks WHERE id=?", [id]);
+    if (!r) return void 0;
+    return { id: r.id, candidateId: r.candidate_id, fileName: r.file_name, fileUrl: r.file_url, fileType: r.file_type, status: r.status, parseResult: r.parse_result, errorMsg: r.error_msg, createdAt: r.created_at, updatedAt: r.updated_at };
   }
   // ==========================================
-  // 简历文件（Base64 存 SQLite BLOB TEXT）
+  // 简历文件元数据（文件本身存 MinIO）
   // ==========================================
-  saveResumeFile(candidateId, file) {
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    sqliteDb.prepare(`
-      INSERT INTO resume_files (candidate_id,file_name,file_type,file_size,file_data,uploaded_at)
-      VALUES (?,?,?,?,?,?)
-      ON CONFLICT(candidate_id) DO UPDATE SET
-        file_name=excluded.file_name, file_type=excluded.file_type,
-        file_size=excluded.file_size, file_data=excluded.file_data,
-        uploaded_at=excluded.uploaded_at
-    `).run(candidateId, file.fileName, file.fileType, file.fileSize, file.fileData, now);
-    sqliteDb.prepare(`
-      UPDATE candidates SET resume_file_name=?,resume_file_type=?,resume_file_size=?,resume_uploaded_at=?,updated_at=? WHERE id=?
-    `).run(file.fileName, file.fileType, file.fileSize, now, now, candidateId);
-    return { candidateId, ...file, uploadedAt: now };
+  /** 更新候选人的简历文件元数据（文件已上传到 MinIO） */
+  async saveResumeFileMeta(candidateId, meta) {
+    await execute(
+      `
+      UPDATE candidates SET
+        resume_file_name=?, resume_file_type=?, resume_file_size=?,
+        resume_file_key=?, resume_uploaded_at=NOW()
+      WHERE id=?`,
+      [meta.fileName, meta.fileType, meta.fileSize, meta.fileKey, candidateId]
+    );
   }
-  getResumeFile(candidateId) {
-    const row = sqliteDb.prepare("SELECT * FROM resume_files WHERE candidate_id=?").get(candidateId);
-    if (!row) return void 0;
-    return { candidateId: row.candidate_id, fileName: row.file_name, fileType: row.file_type, fileSize: row.file_size, fileData: row.file_data, uploadedAt: row.uploaded_at };
+  /** 清除候选人简历文件元数据（文件从 MinIO 删除后调用） */
+  async clearResumeFileMeta(candidateId) {
+    await execute(
+      `
+      UPDATE candidates SET
+        resume_file_name=NULL, resume_file_type=NULL, resume_file_size=NULL,
+        resume_file_key=NULL, resume_uploaded_at=NULL
+      WHERE id=?`,
+      [candidateId]
+    );
   }
-  deleteResumeFile(candidateId) {
-    const result = sqliteDb.prepare("DELETE FROM resume_files WHERE candidate_id=?").run(candidateId);
-    if (result.changes > 0) {
-      sqliteDb.prepare(`UPDATE candidates SET resume_file_name=NULL,resume_file_type=NULL,resume_file_size=NULL,resume_uploaded_at=NULL,updated_at=? WHERE id=?`).run((/* @__PURE__ */ new Date()).toISOString(), candidateId);
-      return true;
-    }
-    return false;
+  /** 获取候选人简历 MinIO key */
+  async getResumeFileKey(candidateId) {
+    const row = await queryOne("SELECT resume_file_key FROM candidates WHERE id=?", [candidateId]);
+    return row?.resume_file_key || void 0;
   }
   // ==========================================
   // 统计数据
   // ==========================================
-  getStatistics() {
-    const total = sqliteDb.prepare("SELECT COUNT(*) as c FROM candidates").get().c;
+  async getStatistics() {
+    const total = (await queryOne("SELECT COUNT(*) as c FROM candidates"))?.c || 0;
     const byStatus = {};
-    sqliteDb.prepare("SELECT candidate_status, COUNT(*) as c FROM candidates GROUP BY candidate_status").all().forEach((r) => {
+    for (const r of await query("SELECT candidate_status, COUNT(*) as c FROM candidates GROUP BY candidate_status")) {
       byStatus[r.candidate_status || "active"] = r.c;
-    });
+    }
     const byEducation = {};
-    sqliteDb.prepare("SELECT highest_education, COUNT(*) as c FROM candidates GROUP BY highest_education").all().forEach((r) => {
+    for (const r of await query("SELECT highest_education, COUNT(*) as c FROM candidates GROUP BY highest_education")) {
       byEducation[r.highest_education || "未知"] = r.c;
-    });
+    }
     const byChannel = {};
-    sqliteDb.prepare("SELECT source_channel, COUNT(*) as c FROM candidates GROUP BY source_channel").all().forEach((r) => {
+    for (const r of await query("SELECT source_channel, COUNT(*) as c FROM candidates GROUP BY source_channel")) {
       byChannel[r.source_channel || "其他"] = r.c;
-    });
+    }
     const byExperience = { "0-2年": 0, "2-5年": 0, "5-10年": 0, "10年+": 0 };
-    sqliteDb.prepare("SELECT years_of_experience FROM candidates").all().forEach((r) => {
+    for (const r of await query("SELECT years_of_experience FROM candidates")) {
       const exp = r.years_of_experience || 0;
       if (exp < 2) byExperience["0-2年"]++;
       else if (exp < 5) byExperience["2-5年"]++;
       else if (exp < 10) byExperience["5-10年"]++;
       else byExperience["10年+"]++;
-    });
-    const topSkills = sqliteDb.prepare("SELECT skill_name, COUNT(*) as c FROM skills GROUP BY skill_name ORDER BY c DESC LIMIT 10").all().map((r) => ({ name: r.skill_name, count: r.c }));
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString();
-    const recentAdded = sqliteDb.prepare("SELECT COUNT(*) as c FROM candidates WHERE created_at >= ?").get(thirtyDaysAgo).c;
-    const avgRow = sqliteDb.prepare("SELECT AVG(match_score) as avg FROM candidates").get();
-    const avgMatchScore = avgRow.avg ? Math.round(avgRow.avg * 10) / 10 : 0;
+    }
+    const topSkills = (await query("SELECT skill_name, COUNT(*) as c FROM skills GROUP BY skill_name ORDER BY c DESC LIMIT 10")).map((r) => ({ name: r.skill_name, count: r.c }));
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().slice(0, 19).replace("T", " ");
+    const recentAdded = (await queryOne("SELECT COUNT(*) as c FROM candidates WHERE created_at >= ?", [thirtyDaysAgo]))?.c || 0;
+    const avgRow = await queryOne("SELECT AVG(match_score) as avg FROM candidates");
+    const avgMatchScore = avgRow?.avg ? Math.round(avgRow.avg * 10) / 10 : 0;
     return { total, recentAdded, byStatus, byEducation, byChannel, byExperience, topSkills, avgMatchScore };
   }
 }
-const db = new SQLiteDatabase();
-function arrayBufferToBase64$1(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 8192;
-  let result = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    result += String.fromCharCode(...chunk);
+const db = new MySQLDatabase();
+const BUCKET = process.env.MINIO_BUCKET || "resumes";
+const minioClient = new Client({
+  endPoint: process.env.MINIO_ENDPOINT || "127.0.0.1",
+  port: parseInt(process.env.MINIO_PORT || "9000"),
+  useSSL: process.env.MINIO_USE_SSL === "true",
+  accessKey: process.env.MINIO_ACCESS_KEY || "minioadmin",
+  secretKey: process.env.MINIO_SECRET_KEY || "minioadmin"
+});
+async function ensureBucket() {
+  try {
+    const exists = await minioClient.bucketExists(BUCKET);
+    if (!exists) {
+      await minioClient.makeBucket(BUCKET, "us-east-1");
+      console.log(`✅ MinIO Bucket "${BUCKET}" 创建成功`);
+    }
+  } catch (err) {
+    console.error("❌ MinIO 初始化失败，请检查连接配置:", err);
   }
-  return btoa(result);
+}
+ensureBucket();
+function generateFileKey(candidateId, fileName) {
+  const ts = Date.now();
+  const safeName = fileName.replace(/[^a-zA-Z0-9.\-_\u4e00-\u9fa5]/g, "_");
+  return `resumes/${candidateId}/${ts}-${safeName}`;
+}
+async function uploadFile(key, buffer, mimeType) {
+  await minioClient.putObject(BUCKET, key, buffer, buffer.length, {
+    "Content-Type": mimeType
+  });
+}
+async function getPresignedUrl(key, expirySeconds = 3600) {
+  return minioClient.presignedGetObject(BUCKET, key, expirySeconds);
+}
+async function getDownloadUrl(key, fileName, expirySeconds = 3600) {
+  return minioClient.presignedGetObject(BUCKET, key, expirySeconds, {
+    "response-content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+  });
+}
+async function deleteFile(key) {
+  await minioClient.removeObject(BUCKET, key);
 }
 const candidates = new Hono();
-candidates.get("/", (c) => {
-  const query = c.req.query();
-  const params = {
-    keyword: query.keyword,
-    candidateStatus: query.candidateStatus,
-    highestEducation: query.highestEducation,
-    sourceChannel: query.sourceChannel,
-    skillKeyword: query.skillKeyword,
-    minExperience: query.minExperience ? parseFloat(query.minExperience) : void 0,
-    maxExperience: query.maxExperience ? parseFloat(query.maxExperience) : void 0,
-    isBlacklist: query.isBlacklist === "true" ? true : query.isBlacklist === "false" ? false : void 0,
-    page: query.page ? parseInt(query.page) : 1,
-    pageSize: query.pageSize ? parseInt(query.pageSize) : 10,
-    sortBy: query.sortBy || "createdAt",
-    sortOrder: query.sortOrder || "desc"
-  };
-  const { list, total } = db.getCandidates(params);
-  return c.json({
-    success: true,
-    data: list,
-    total,
-    page: params.page,
-    pageSize: params.pageSize
+candidates.get("/", async (c) => {
+  const q = c.req.query();
+  const { list, total } = await db.getCandidates({
+    ...q,
+    page: q.page ? parseInt(q.page) : 1,
+    pageSize: q.pageSize ? parseInt(q.pageSize) : 10,
+    minExperience: q.minExperience ? parseFloat(q.minExperience) : void 0,
+    maxExperience: q.maxExperience ? parseFloat(q.maxExperience) : void 0,
+    minAge: q.minAge ? parseInt(q.minAge) : void 0,
+    maxAge: q.maxAge ? parseInt(q.maxAge) : void 0,
+    minSalary: q.minSalary ? parseInt(q.minSalary) : void 0,
+    maxSalary: q.maxSalary ? parseInt(q.maxSalary) : void 0,
+    minMatchScore: q.minMatchScore ? parseFloat(q.minMatchScore) : void 0,
+    isBlacklist: q.isBlacklist === "true" ? true : q.isBlacklist === "false" ? false : void 0
   });
+  return c.json({ success: true, data: list, total, page: parseInt(q.page || "1"), pageSize: parseInt(q.pageSize || "10") });
 });
-candidates.get("/:id", (c) => {
+candidates.get("/stats/overview", async (c) => {
+  const stats = await db.getStatistics();
+  return c.json({ success: true, data: stats });
+});
+candidates.get("/:id", async (c) => {
   const id = parseInt(c.req.param("id"));
-  const candidate = db.getCandidateById(id);
-  if (!candidate) {
-    return c.json({ success: false, message: "候选人不存在" }, 404);
-  }
+  const candidate = await db.getCandidateById(id);
+  if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
   return c.json({ success: true, data: candidate });
 });
 candidates.post("/", async (c) => {
   try {
     const body = await c.req.json();
-    if (!body.name || body.name.trim() === "") {
-      return c.json({ success: false, message: "姓名不能为空" }, 400);
-    }
-    const candidate = db.createCandidate(body);
+    if (!body.name?.trim()) return c.json({ success: false, message: "姓名不能为空" }, 400);
+    const candidate = await db.createCandidate(body);
     return c.json({ success: true, data: candidate, message: "候选人创建成功" }, 201);
   } catch (e) {
-    return c.json({ success: false, message: `创建失败: ${e}` }, 500);
+    return c.json({ success: false, message: `创建失败: ${e.message}` }, 500);
   }
 });
 candidates.put("/:id", async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const body = await c.req.json();
-    const updated = db.updateCandidate(id, body);
-    if (!updated) {
-      return c.json({ success: false, message: "候选人不存在" }, 404);
-    }
+    const updated = await db.updateCandidate(id, body);
+    if (!updated) return c.json({ success: false, message: "候选人不存在" }, 404);
     return c.json({ success: true, data: updated, message: "更新成功" });
   } catch (e) {
-    return c.json({ success: false, message: `更新失败: ${e}` }, 500);
+    return c.json({ success: false, message: `更新失败: ${e.message}` }, 500);
   }
 });
 candidates.patch("/:id/status", async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const { candidateStatus } = await c.req.json();
-    const validStatuses = ["active", "interviewing", "hired", "rejected", "blacklist"];
-    if (!validStatuses.includes(candidateStatus)) {
-      return c.json({ success: false, message: "无效的状态值" }, 400);
-    }
-    const updated = db.updateCandidate(id, {
-      candidateStatus,
-      isBlacklist: candidateStatus === "blacklist"
-    });
-    if (!updated) {
-      return c.json({ success: false, message: "候选人不存在" }, 404);
-    }
+    const validStatuses = ["active", "interviewing", "hired", "rejected", "blacklist", "archived"];
+    if (!validStatuses.includes(candidateStatus)) return c.json({ success: false, message: "无效的状态值" }, 400);
+    const updated = await db.updateCandidate(id, { candidateStatus, isBlacklist: candidateStatus === "blacklist" });
+    if (!updated) return c.json({ success: false, message: "候选人不存在" }, 404);
     return c.json({ success: true, data: updated, message: "状态更新成功" });
   } catch (e) {
-    return c.json({ success: false, message: `状态更新失败: ${e}` }, 500);
+    return c.json({ success: false, message: `状态更新失败: ${e.message}` }, 500);
   }
 });
 candidates.patch("/:id/notes", async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     const { hrNotes } = await c.req.json();
-    const updated = db.updateCandidate(id, { hrNotes });
-    if (!updated) {
-      return c.json({ success: false, message: "候选人不存在" }, 404);
-    }
+    const updated = await db.updateCandidate(id, { hrNotes });
+    if (!updated) return c.json({ success: false, message: "候选人不存在" }, 404);
     return c.json({ success: true, message: "备注更新成功" });
   } catch (e) {
-    return c.json({ success: false, message: `备注更新失败: ${e}` }, 500);
+    return c.json({ success: false, message: `备注更新失败: ${e.message}` }, 500);
   }
 });
-candidates.delete("/:id", (c) => {
+candidates.delete("/:id", async (c) => {
   const id = parseInt(c.req.param("id"));
-  const deleted = db.deleteCandidate(id);
-  if (!deleted) {
-    return c.json({ success: false, message: "候选人不存在" }, 404);
+  const fileKey = await db.getResumeFileKey(id);
+  if (fileKey) {
+    try {
+      await deleteFile(fileKey);
+    } catch {
+    }
   }
+  const deleted = await db.deleteCandidate(id);
+  if (!deleted) return c.json({ success: false, message: "候选人不存在" }, 404);
   return c.json({ success: true, message: "删除成功" });
 });
 candidates.post("/:id/interviews", async (c) => {
   try {
     const candidateId = parseInt(c.req.param("id"));
     const body = await c.req.json();
-    const record = db.addInterviewRecord(candidateId, { ...body, candidateId });
+    const record = await db.addInterviewRecord(candidateId, { ...body, candidateId });
     return c.json({ success: true, data: record, message: "面试记录添加成功" }, 201);
   } catch (e) {
-    return c.json({ success: false, message: `添加失败: ${e}` }, 500);
+    return c.json({ success: false, message: `添加失败: ${e.message}` }, 500);
   }
 });
-candidates.get("/stats/overview", (c) => {
-  const stats = db.getStatistics();
-  return c.json({ success: true, data: stats });
-});
-candidates.get("/:id/resume", (c) => {
+candidates.get("/:id/resume/info", async (c) => {
   const id = parseInt(c.req.param("id"));
-  const candidate = db.getCandidateById(id);
+  const candidate = await db.getCandidateById(id);
   if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
-  const file = db.getResumeFile(id);
-  if (!file) return c.json({ success: false, message: "该候选人暂无上传的简历文件" }, 404);
-  const download = c.req.query("download") === "1";
-  const binaryStr = atob(file.fileData);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-  const disposition = download ? `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}` : `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`;
-  return new Response(bytes.buffer, {
-    status: 200,
-    headers: {
-      "Content-Type": file.fileType || "application/octet-stream",
-      "Content-Disposition": disposition,
-      "Content-Length": String(bytes.length),
-      "Cache-Control": "private, no-cache"
-    }
-  });
+  if (!candidate.resumeFileKey) {
+    return c.json({ success: true, hasFile: false, message: "暂无简历文件" });
+  }
+  try {
+    const [previewUrl, downloadUrl] = await Promise.all([
+      getPresignedUrl(candidate.resumeFileKey, 3600),
+      getDownloadUrl(candidate.resumeFileKey, candidate.resumeFileName || "resume", 3600)
+    ]);
+    return c.json({
+      success: true,
+      hasFile: true,
+      data: {
+        fileName: candidate.resumeFileName,
+        fileType: candidate.resumeFileType,
+        fileSize: candidate.resumeFileSize,
+        uploadedAt: candidate.resumeUploadedAt,
+        previewUrl,
+        // 前端 iframe/img 直接使用，1小时有效
+        downloadUrl
+        // 强制下载链接
+      }
+    });
+  } catch (e) {
+    return c.json({ success: false, message: `获取文件信息失败: ${e.message}` }, 500);
+  }
 });
-candidates.get("/:id/resume/info", (c) => {
+candidates.get("/:id/resume", async (c) => {
   const id = parseInt(c.req.param("id"));
-  const candidate = db.getCandidateById(id);
+  const candidate = await db.getCandidateById(id);
   if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
-  const file = db.getResumeFile(id);
-  if (!file) return c.json({ success: false, hasFile: false, message: "暂无简历文件" });
-  return c.json({
-    success: true,
-    hasFile: true,
-    data: {
-      fileName: file.fileName,
-      fileType: file.fileType,
-      fileSize: file.fileSize,
-      uploadedAt: file.uploadedAt
+  if (!candidate.resumeFileKey) return c.json({ success: false, message: "该候选人暂无上传的简历文件" }, 404);
+  try {
+    const download = c.req.query("download") === "1";
+    if (!download) {
+      const url2 = await getPresignedUrl(candidate.resumeFileKey, 3600);
+      return c.redirect(url2, 302);
     }
-  });
+    const url = await getDownloadUrl(candidate.resumeFileKey, candidate.resumeFileName || "resume", 3600);
+    return c.redirect(url, 302);
+  } catch (e) {
+    return c.json({ success: false, message: `文件获取失败: ${e.message}` }, 500);
+  }
 });
 candidates.post("/:id/resume", async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
-    const candidate = db.getCandidateById(id);
+    const candidate = await db.getCandidateById(id);
     if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
     const formData = await c.req.formData();
     const file = formData.get("file");
@@ -1121,34 +817,45 @@ candidates.post("/:id/resume", async (c) => {
     if (!allowedExts.includes(fileExt)) {
       return c.json({ success: false, message: "仅支持 PDF、Word、JPG、PNG 格式" }, 400);
     }
-    if (file.size > 10 * 1024 * 1024) {
-      return c.json({ success: false, message: "文件大小不能超过 10MB" }, 400);
+    if (file.size > 20 * 1024 * 1024) {
+      return c.json({ success: false, message: "文件大小不能超过 20MB" }, 400);
     }
-    const fileBuffer = await file.arrayBuffer();
-    const base64 = arrayBufferToBase64$1(fileBuffer);
-    db.saveResumeFile(id, {
+    if (candidate.resumeFileKey) {
+      try {
+        await deleteFile(candidate.resumeFileKey);
+      } catch {
+      }
+    }
+    const fileKey = generateFileKey(id, file.name);
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = file.type || `application/${fileExt}`;
+    await uploadFile(fileKey, fileBuffer, mimeType);
+    await db.saveResumeFileMeta(id, {
       fileName: file.name,
-      fileType: file.type || `application/${fileExt}`,
+      fileType: mimeType,
       fileSize: file.size,
-      fileData: base64
+      fileKey
     });
+    const previewUrl = await getPresignedUrl(fileKey, 3600);
     return c.json({
       success: true,
       message: "简历文件上传成功",
-      data: {
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size
-      }
+      data: { fileName: file.name, fileType: mimeType, fileSize: file.size, previewUrl }
     });
   } catch (e) {
     return c.json({ success: false, message: `上传失败: ${e.message}` }, 500);
   }
 });
-candidates.delete("/:id/resume", (c) => {
+candidates.delete("/:id/resume", async (c) => {
   const id = parseInt(c.req.param("id"));
-  const deleted = db.deleteResumeFile(id);
-  if (!deleted) return c.json({ success: false, message: "文件不存在" }, 404);
+  const fileKey = await db.getResumeFileKey(id);
+  if (!fileKey) return c.json({ success: false, message: "文件不存在" }, 404);
+  try {
+    await deleteFile(fileKey);
+  } catch (e) {
+    console.warn("MinIO 删除文件失败（继续清理元数据）:", e);
+  }
+  await db.clearResumeFileMeta(id);
   return c.json({ success: true, message: "简历文件已删除" });
 });
 const PARSE_SYSTEM_PROMPT = `你是一个专业的简历解析AI助手。你需要从提供的简历文本中提取结构化信息。
@@ -1454,132 +1161,87 @@ function calculateProfileCompleteness(candidate) {
   if (candidate.tags?.length > 0) score += 5;
   return Math.min(100, Math.round(score));
 }
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 8192;
-  let result = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    result += String.fromCharCode(...chunk);
-  }
-  return btoa(result);
-}
 const upload = new Hono();
 upload.post("/resume", async (c) => {
   try {
     const apiKey = c.req.header("X-OpenAI-Key") || process.env.OPENAI_API_KEY || "";
     const apiBaseUrl = c.req.header("X-OpenAI-Base-URL") || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
     if (!apiKey) {
-      return c.json({
-        success: false,
-        message: "OpenAI API Key未配置，请在系统设置中配置API Key"
-      }, 400);
+      return c.json({ success: false, message: "OpenAI API Key未配置，请在系统设置中配置API Key" }, 400);
     }
     const formData = await c.req.formData();
     const file = formData.get("file");
     const sourceChannel = formData.get("sourceChannel") || "手动上传";
-    if (!file) {
-      return c.json({ success: false, message: "请选择要上传的简历文件" }, 400);
-    }
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "text/plain",
-      "text/html",
-      "image/jpeg",
-      "image/png",
-      "image/webp"
-    ];
+    if (!file) return c.json({ success: false, message: "请选择要上传的简历文件" }, 400);
     const allowedExts = ["pdf", "doc", "docx", "txt", "html", "htm", "jpg", "jpeg", "png", "webp"];
     const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
-    if (!allowedTypes.includes(file.type) && !allowedExts.includes(fileExt)) {
-      return c.json({
-        success: false,
-        message: `不支持的文件格式，请上传 PDF、Word、TXT、HTML 或图片格式的简历`
-      }, 400);
+    if (!allowedExts.includes(fileExt)) {
+      return c.json({ success: false, message: "不支持的文件格式，请上传 PDF、Word、TXT、HTML 或图片格式" }, 400);
     }
-    if (file.size > 10 * 1024 * 1024) {
-      return c.json({ success: false, message: "文件大小不能超过10MB" }, 400);
+    if (file.size > 20 * 1024 * 1024) {
+      return c.json({ success: false, message: "文件大小不能超过 20MB" }, 400);
     }
     const fileBuffer = await file.arrayBuffer();
-    const task = db.createParseTask({
-      fileName: file.name,
-      fileType: file.type || fileExt,
-      status: "processing",
-      candidateId: void 0
-    });
+    const nodeBuffer = Buffer.from(fileBuffer);
+    const mimeType = file.type || `application/${fileExt}`;
+    const task = await db.createParseTask({ fileName: file.name, fileType: mimeType, status: "processing" });
     try {
-      const resumeText = await extractTextFromFile(
-        fileBuffer,
-        file.name,
-        file.type,
-        apiKey,
-        apiBaseUrl
-      );
+      const resumeText = await extractTextFromFile(fileBuffer, file.name, file.type, apiKey, apiBaseUrl);
       if (!resumeText || resumeText.trim().length < 10) {
-        db.updateParseTask(task.id, { status: "failed", errorMsg: "无法提取文件文本内容" });
-        return c.json({
-          success: false,
-          message: "无法从文件中提取有效内容。PDF请确保非扫描件或加密文件；图片请保证文字清晰。"
-        }, 400);
+        await db.updateParseTask(task.id, { status: "failed", errorMsg: "无法提取文件文本内容" });
+        return c.json({ success: false, message: "无法从文件中提取有效内容，PDF请确保非扫描件；图片请保证文字清晰" }, 400);
       }
       const parseResult = await parseResumeWithAI(resumeText, apiKey, apiBaseUrl);
       if (!parseResult.name) {
         parseResult.name = file.name.replace(/\.[^.]+$/, "").replace(/简历|_resume|resume/gi, "").trim() || "未知姓名";
       }
-      const candidate = db.createCandidate({
+      const candidate = await db.createCandidate({
         ...parseResult,
         sourceChannel,
         rawResumeText: resumeText.slice(0, 5e3),
         resumeFileName: file.name,
-        resumeFileType: file.type || `application/${fileExt}`,
+        resumeFileType: mimeType,
         resumeFileSize: file.size,
         candidateStatus: "active",
         matchScore: calculateProfileCompleteness(parseResult)
       });
-      const base64 = arrayBufferToBase64(fileBuffer);
-      db.saveResumeFile(candidate.id, {
+      const fileKey = generateFileKey(candidate.id, file.name);
+      await uploadFile(fileKey, nodeBuffer, mimeType);
+      await db.saveResumeFileMeta(candidate.id, {
         fileName: file.name,
-        fileType: file.type || `application/${fileExt}`,
+        fileType: mimeType,
         fileSize: file.size,
-        fileData: base64
+        fileKey
       });
-      db.updateParseTask(task.id, {
+      const previewUrl = await getPresignedUrl(fileKey, 3600);
+      await db.updateParseTask(task.id, {
         status: "completed",
         candidateId: candidate.id,
         parseResult: JSON.stringify(parseResult)
       });
+      const fullCandidate = await db.getCandidateById(candidate.id);
       return c.json({
         success: true,
-        data: {
-          candidate,
-          parseResult,
-          taskId: task.id
-        },
+        data: { candidate: fullCandidate, parseResult, taskId: task.id, previewUrl },
         message: `简历解析成功！已为 ${candidate.name} 创建候选人档案`
       });
     } catch (parseError) {
-      db.updateParseTask(task.id, {
-        status: "failed",
-        errorMsg: parseError.message
-      });
+      await db.updateParseTask(task.id, { status: "failed", errorMsg: parseError.message });
       throw parseError;
     }
   } catch (e) {
-    console.error("简历解析错误:", e);
     const msg = e.message || "未知错误";
     let friendlyMsg = `简历解析失败: ${msg}`;
     if (msg.includes("401") || msg.includes("invalid_api_key") || msg.includes("Incorrect API key")) {
       friendlyMsg = "API Key 无效或已过期，请在系统设置 → AI配置中重新填写正确的 OpenAI API Key。";
     } else if (msg.includes("429") || msg.includes("rate_limit")) {
-      friendlyMsg = "OpenAI 请求频率超限，请稍后再试（当前 API Key 配额不足）。";
+      friendlyMsg = "OpenAI 请求频率超限，请稍后再试。";
     } else if (msg.includes("quota") || msg.includes("insufficient_quota")) {
       friendlyMsg = "OpenAI API 余额不足，请充值后再试。";
     } else if (msg.includes("timeout") || msg.includes("ETIMEDOUT")) {
-      friendlyMsg = "请求超时，请检查网络连接或 API Base URL 是否正确。";
+      friendlyMsg = "请求超时，请检查网络或 API Base URL 是否正确。";
     } else if (msg.includes("model") && msg.includes("not found")) {
-      friendlyMsg = "模型不存在，当前使用 gpt-4o，请确认 API Key 有权限访问该模型。";
+      friendlyMsg = "模型不存在，请确认 API Key 有权限访问 gpt-4o。";
     }
     return c.json({ success: false, message: friendlyMsg }, 500);
   }
@@ -1588,21 +1250,14 @@ upload.post("/text", async (c) => {
   try {
     const apiKey = c.req.header("X-OpenAI-Key") || process.env.OPENAI_API_KEY || "";
     const apiBaseUrl = c.req.header("X-OpenAI-Base-URL") || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-    if (!apiKey) {
-      return c.json({
-        success: false,
-        message: "OpenAI API Key未配置"
-      }, 400);
-    }
+    if (!apiKey) return c.json({ success: false, message: "OpenAI API Key未配置" }, 400);
     const body = await c.req.json();
     if (!body.text || body.text.trim().length < 20) {
-      return c.json({ success: false, message: "简历文本内容过短，请输入完整的简历信息" }, 400);
+      return c.json({ success: false, message: "简历文本内容过短，请输入完整简历信息" }, 400);
     }
     const parseResult = await parseResumeWithAI(body.text, apiKey, apiBaseUrl);
-    if (!parseResult.name) {
-      parseResult.name = "未知姓名";
-    }
-    const candidate = db.createCandidate({
+    if (!parseResult.name) parseResult.name = "未知姓名";
+    const candidate = await db.createCandidate({
       ...parseResult,
       sourceChannel: body.sourceChannel || "文本导入",
       rawResumeText: body.text.slice(0, 5e3),
@@ -1617,36 +1272,26 @@ upload.post("/text", async (c) => {
   } catch (e) {
     const msg = e.message || "未知错误";
     let friendlyMsg = `解析失败: ${msg}`;
-    if (msg.includes("401") || msg.includes("invalid_api_key") || msg.includes("Incorrect API key")) {
-      friendlyMsg = "API Key 无效或已过期，请在系统设置 → AI配置中重新填写正确的 OpenAI API Key。";
-    } else if (msg.includes("429") || msg.includes("rate_limit")) {
-      friendlyMsg = "OpenAI 请求频率超限，请稍后再试。";
-    } else if (msg.includes("quota") || msg.includes("insufficient_quota")) {
-      friendlyMsg = "OpenAI API 余额不足，请充值后再试。";
-    }
+    if (msg.includes("401") || msg.includes("invalid_api_key")) friendlyMsg = "API Key 无效，请检查系统设置。";
+    else if (msg.includes("429")) friendlyMsg = "OpenAI 请求频率超限，请稍后再试。";
+    else if (msg.includes("quota")) friendlyMsg = "OpenAI API 余额不足，请充值后再试。";
     return c.json({ success: false, message: friendlyMsg }, 500);
   }
 });
-upload.get("/task/:id", (c) => {
+upload.get("/task/:id", async (c) => {
   const id = parseInt(c.req.param("id"));
-  const task = db.getParseTask(id);
-  if (!task) {
-    return c.json({ success: false, message: "任务不存在" }, 404);
-  }
+  const task = await db.getParseTask(id);
+  if (!task) return c.json({ success: false, message: "任务不存在" }, 404);
   return c.json({ success: true, data: task });
 });
 upload.post("/config", async (c) => {
   try {
     const { openaiKey, openaiBaseUrl } = await c.req.json();
-    if (!openaiKey) {
-      return c.json({ success: false, message: "API Key不能为空" }, 400);
-    }
-    const testResponse = await fetch(`${openaiBaseUrl || "https://api.openai.com/v1"}/models`, {
+    if (!openaiKey) return c.json({ success: false, message: "API Key不能为空" }, 400);
+    const testRes = await fetch(`${openaiBaseUrl || "https://api.openai.com/v1"}/models`, {
       headers: { "Authorization": `Bearer ${openaiKey}` }
     });
-    if (!testResponse.ok) {
-      return c.json({ success: false, message: "API Key无效，请检查后重试" }, 400);
-    }
+    if (!testRes.ok) return c.json({ success: false, message: "API Key无效，请检查后重试" }, 400);
     return c.json({ success: true, message: "API Key验证成功" });
   } catch (e) {
     return c.json({ success: false, message: `验证失败: ${e.message}` }, 500);

@@ -10,15 +10,16 @@ export default defineConfig({
         entryFileNames: 'app.js',
         format: 'esm',
       },
-      // 外部化 Node.js 运行时依赖（不打包进产物）
       external: [
+        // Node.js 内置模块
+        'fs', 'path', 'os', 'crypto', 'stream', 'buffer', 'http', 'https', 'net', 'tls', 'events',
+        // 运行时依赖（不打包，由 node_modules 提供）
         '@hono/node-server',
         '@hono/node-server/serve-static',
+        'mysql2',
+        'mysql2/promise',
+        'minio',
         'better-sqlite3',
-        'fs',
-        'path',
-        'os',
-        'crypto',
       ],
     },
     minify: false,

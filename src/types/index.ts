@@ -125,6 +125,7 @@ export interface Candidate {
   resumeFileName?: string
   resumeFileType?: string   // MIME类型，如 application/pdf / image/jpeg
   resumeFileSize?: number   // 文件大小（字节）
+  resumeFileKey?: string    // MinIO 对象 Key
   resumeUploadedAt?: string // 最近上传时间
   createdAt?: string
   updatedAt?: string
