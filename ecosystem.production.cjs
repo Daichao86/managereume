@@ -11,8 +11,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
-        HOST: '0.0.0.0'
-        // OPENAI_API_KEY: 'sk-xxx',   // 取消注释并填入
+        HOST: '0.0.0.0',
+        // DATA_DIR: '/data/resume-talent-mgr',  // SQLite 数据目录（默认: ./data）
+        // OPENAI_API_KEY: 'sk-xxx',              // 取消注释并填入
         // OPENAI_BASE_URL: 'https://api.openai.com/v1'
       },
       error_file: './logs/err.log',

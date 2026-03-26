@@ -29,5 +29,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# SQLite 数据库文件（生产数据，不提交到 git）
+data/
+*.db
+*.db-shm
+*.db-wal
+
 # misc
 .DS_Store

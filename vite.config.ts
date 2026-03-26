@@ -14,9 +14,13 @@ export default defineConfig({
       external: [
         '@hono/node-server',
         '@hono/node-server/serve-static',
+        'better-sqlite3',
+        'fs',
+        'path',
+        'os',
+        'crypto',
       ],
     },
-    // 不压缩，方便问题排查
     minify: false,
     target: 'node18',
   },
