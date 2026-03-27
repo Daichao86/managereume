@@ -594,274 +594,288 @@ const archiveState = {
 }
 
 async function renderArchiveSearch() {
+  const p = archiveState.params
+  // 判断高级条件是否有值（用于控制展开状态）
+  const hasAdvanced = !!(p.name||p.phone||p.email||p.gender||p.minAge||p.maxAge||p.location||
+    p.currentStatus||p.candidateStatus||p.expectedCity||p.minExperience||p.maxExperience||
+    p.minSalary||p.maxSalary||p.highestEducation||p.schoolKeyword||p.majorKeyword||
+    p.companyKeyword||p.industryKeyword||p.sourceChannel||p.minMatchScore||p.hasResume||p.hrNotesKeyword)
+
   document.getElementById('mainContent').innerHTML = `
-    <div class="flex flex-col h-full bg-gray-50" style="height:calc(100vh - 0px)">
+    <div class="min-h-full bg-gray-50 overflow-y-auto">
+      <div class="max-w-6xl mx-auto px-4 py-4">
 
-      <!-- 页面头部 -->
-      <div class="flex-shrink-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <i class="fas fa-search text-blue-500"></i>档案查询
-          </h2>
-          <p class="text-gray-400 text-xs mt-0.5">多维度联合查询，精准定位人才档案</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="archiveClearAll()" class="text-sm border border-gray-200 text-gray-500 px-4 py-2 rounded-xl hover:bg-gray-50 transition flex items-center gap-1.5">
-            <i class="fas fa-undo text-xs"></i>重置条件
-          </button>
-          <button onclick="archiveSearch(1)" class="text-sm bg-blue-600 text-white px-5 py-2 rounded-xl hover:bg-blue-700 transition flex items-center gap-1.5">
-            <i class="fas fa-search text-xs"></i>开始查询
-          </button>
-        </div>
-      </div>
-
-      <!-- 搜索条件区 -->
-      <div class="flex-shrink-0 overflow-y-auto bg-white border-b border-gray-100 px-6 py-4 space-y-4">
-
-        <!-- 第一行：全文搜索 -->
-        <div class="flex items-center gap-3">
-          <label class="text-xs font-semibold text-gray-400 w-16 flex-shrink-0">全文搜索</label>
-          <div class="flex-1 relative">
-            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-xs"></i>
-            <input type="text" id="aq-keyword" placeholder="搜索姓名、职位、邮箱、城市、备注..." value="${archiveState.params.keyword}"
-              class="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
+        <!-- 页面标题 -->
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+              <i class="fas fa-search text-blue-500"></i>档案查询
+            </h2>
+            <p class="text-gray-400 text-xs mt-0.5">多维度联合查询，精准定位人才档案</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="archiveClearAll()" class="text-sm border border-gray-200 text-gray-500 px-4 py-2 rounded-xl hover:bg-gray-50 transition flex items-center gap-1.5">
+              <i class="fas fa-undo text-xs"></i>重置
+            </button>
+            <button onclick="archiveSearch(1)" class="text-sm bg-blue-600 text-white px-5 py-2 rounded-xl hover:bg-blue-700 transition flex items-center gap-1.5">
+              <i class="fas fa-search text-xs"></i>查询
+            </button>
           </div>
         </div>
 
-        <!-- 分隔线 + 分组标题 -->
-        <div class="flex items-center gap-3">
-          <span class="text-[11px] font-bold text-blue-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
-            <i class="fas fa-user"></i>基本信息
-          </span>
-          <div class="flex-1 h-px bg-gray-100"></div>
-        </div>
+        <!-- 搜索条件卡片 -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm mb-4">
 
-        <!-- 第二行：个人信息 -->
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">姓名</label>
-            <input type="text" id="aq-name" placeholder="模糊匹配" value="${archiveState.params.name}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">手机号</label>
-            <input type="text" id="aq-phone" placeholder="部分匹配" value="${archiveState.params.phone}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">邮箱</label>
-            <input type="text" id="aq-email" placeholder="部分匹配" value="${archiveState.params.email}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">性别</label>
-            <select id="aq-gender" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <option value="">不限</option>
-              <option value="男" ${archiveState.params.gender==='男'?'selected':''}>男</option>
-              <option value="女" ${archiveState.params.gender==='女'?'selected':''}>女</option>
-            </select>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">年龄区间</label>
-            <div class="flex items-center gap-1">
-              <input type="number" id="aq-minAge" placeholder="最小" min="16" max="70" value="${archiveState.params.minAge}"
-                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <span class="text-gray-300 text-xs">-</span>
-              <input type="number" id="aq-maxAge" placeholder="最大" min="16" max="70" value="${archiveState.params.maxAge}"
-                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <!-- 常用条件（始终展示） -->
+          <div class="px-5 pt-4 pb-3">
+            <!-- 全文搜索 -->
+            <div class="relative mb-3">
+              <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm"></i>
+              <input type="text" id="aq-keyword" placeholder="快速搜索：姓名、职位、技能、邮箱、城市、备注..." value="${p.keyword}"
+                class="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 focus:bg-white transition"
+                onkeydown="if(event.key==='Enter') archiveSearch(1)">
+            </div>
+            <!-- 常用筛选条：职位 + 学历 + 档案状态 + 技能 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div class="flex flex-col gap-1">
+                <label class="text-[11px] text-gray-400 font-medium">意向职位</label>
+                <input type="text" id="aq-expectedPosition" placeholder="如: Java工程师" value="${p.expectedPosition}"
+                  class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  onkeydown="if(event.key==='Enter') archiveSearch(1)">
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-[11px] text-gray-400 font-medium">技能/技术栈</label>
+                <input type="text" id="aq-skill" placeholder="多个技能用逗号分隔" value="${p.skillKeyword}"
+                  class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  onkeydown="if(event.key==='Enter') archiveSearch(1)">
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-[11px] text-gray-400 font-medium">最高学历</label>
+                <select id="aq-highestEdu" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  <option value="">不限</option>
+                  <option value="博士" ${p.highestEducation==='博士'?'selected':''}>博士</option>
+                  <option value="硕士" ${p.highestEducation==='硕士'?'selected':''}>硕士</option>
+                  <option value="本科" ${p.highestEducation==='本科'?'selected':''}>本科</option>
+                  <option value="大专" ${p.highestEducation==='大专'?'selected':''}>大专</option>
+                  <option value="高中" ${p.highestEducation==='高中'?'selected':''}>高中/中专</option>
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-[11px] text-gray-400 font-medium">档案状态</label>
+                <select id="aq-candidateStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  <option value="">不限</option>
+                  <option value="active" ${p.candidateStatus==='active'?'selected':''}>活跃</option>
+                  <option value="interviewing" ${p.candidateStatus==='interviewing'?'selected':''}>面试中</option>
+                  <option value="hired" ${p.candidateStatus==='hired'?'selected':''}>已录用</option>
+                  <option value="rejected" ${p.candidateStatus==='rejected'?'selected':''}>已淘汰</option>
+                  <option value="blacklist" ${p.candidateStatus==='blacklist'?'selected':''}>黑名单</option>
+                </select>
+              </div>
             </div>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">现居城市</label>
-            <input type="text" id="aq-location" placeholder="如: 北京、上海" value="${archiveState.params.location}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-        </div>
 
-        <!-- 职业意向分组 -->
-        <div class="flex items-center gap-3">
-          <span class="text-[11px] font-bold text-green-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
-            <i class="fas fa-briefcase"></i>职业意向
-          </span>
-          <div class="flex-1 h-px bg-gray-100"></div>
-        </div>
+          <!-- 高级条件折叠区 -->
+          <div class="border-t border-gray-100">
+            <button onclick="archiveToggleAdvanced()" id="advancedToggleBtn"
+              class="w-full flex items-center justify-between px-5 py-2.5 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition">
+              <span class="flex items-center gap-1.5">
+                <i class="fas fa-sliders-h"></i>
+                高级筛选条件
+                ${hasAdvanced ? '<span class="bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5 text-[10px] font-semibold">已启用</span>' : ''}
+              </span>
+              <i class="fas fa-chevron-down text-xs transition-transform" id="advancedArrow" style="${hasAdvanced?'transform:rotate(180deg)':''}"></i>
+            </button>
 
-        <!-- 第三行：职业信息 -->
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">求职状态</label>
-            <select id="aq-currentStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <option value="">不限</option>
-              <option value="在职-考虑机会" ${archiveState.params.currentStatus==='在职-考虑机会'?'selected':''}>在职-考虑机会</option>
-              <option value="在职-急找" ${archiveState.params.currentStatus==='在职-急找'?'selected':''}>在职-急找</option>
-              <option value="离职-找工作" ${archiveState.params.currentStatus==='离职-找工作'?'selected':''}>离职-找工作</option>
-              <option value="应届生" ${archiveState.params.currentStatus==='应届生'?'selected':''}>应届生</option>
-            </select>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">档案状态</label>
-            <select id="aq-candidateStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <option value="">不限</option>
-              <option value="active" ${archiveState.params.candidateStatus==='active'?'selected':''}>活跃</option>
-              <option value="interviewing" ${archiveState.params.candidateStatus==='interviewing'?'selected':''}>面试中</option>
-              <option value="hired" ${archiveState.params.candidateStatus==='hired'?'selected':''}>已录用</option>
-              <option value="rejected" ${archiveState.params.candidateStatus==='rejected'?'selected':''}>已淘汰</option>
-              <option value="blacklist" ${archiveState.params.candidateStatus==='blacklist'?'selected':''}>黑名单</option>
-            </select>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">意向职位</label>
-            <input type="text" id="aq-expectedPosition" placeholder="如: Java工程师" value="${archiveState.params.expectedPosition}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">期望城市</label>
-            <input type="text" id="aq-expectedCity" placeholder="如: 北京、深圳" value="${archiveState.params.expectedCity}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">工作年限</label>
-            <div class="flex items-center gap-1">
-              <input type="number" id="aq-minExp" placeholder="最少" min="0" max="50" value="${archiveState.params.minExperience}"
-                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <span class="text-gray-300 text-xs">-</span>
-              <input type="number" id="aq-maxExp" placeholder="最多" min="0" max="50" value="${archiveState.params.maxExperience}"
-                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <div id="advancedPanel" class="${hasAdvanced?'':'hidden'} px-5 pb-4 space-y-4 border-t border-gray-50">
+
+              <!-- 基本信息 -->
+              <div class="pt-3">
+                <div class="flex items-center gap-2 mb-2.5">
+                  <span class="text-[11px] font-bold text-blue-500 flex items-center gap-1"><i class="fas fa-user"></i>基本信息</span>
+                  <div class="flex-1 h-px bg-gray-100"></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">姓名</label>
+                    <input type="text" id="aq-name" placeholder="模糊匹配" value="${p.name}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">手机号</label>
+                    <input type="text" id="aq-phone" placeholder="部分匹配" value="${p.phone}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">邮箱</label>
+                    <input type="text" id="aq-email" placeholder="部分匹配" value="${p.email}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">性别</label>
+                    <select id="aq-gender" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <option value="">不限</option>
+                      <option value="男" ${p.gender==='男'?'selected':''}>男</option>
+                      <option value="女" ${p.gender==='女'?'selected':''}>女</option>
+                    </select>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">年龄区间</label>
+                    <div class="flex items-center gap-1">
+                      <input type="number" id="aq-minAge" placeholder="最小" min="16" max="70" value="${p.minAge}"
+                        class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <span class="text-gray-300 text-xs flex-shrink-0">-</span>
+                      <input type="number" id="aq-maxAge" placeholder="最大" min="16" max="70" value="${p.maxAge}"
+                        class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">现居城市</label>
+                    <input type="text" id="aq-location" placeholder="如: 北京" value="${p.location}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 职业意向 -->
+              <div>
+                <div class="flex items-center gap-2 mb-2.5">
+                  <span class="text-[11px] font-bold text-green-500 flex items-center gap-1"><i class="fas fa-briefcase"></i>职业意向</span>
+                  <div class="flex-1 h-px bg-gray-100"></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">求职状态</label>
+                    <select id="aq-currentStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <option value="">不限</option>
+                      <option value="在职-考虑机会" ${p.currentStatus==='在职-考虑机会'?'selected':''}>在职考虑机会</option>
+                      <option value="在职-急找" ${p.currentStatus==='在职-急找'?'selected':''}>在职急找</option>
+                      <option value="离职-找工作" ${p.currentStatus==='离职-找工作'?'selected':''}>离职找工作</option>
+                      <option value="应届生" ${p.currentStatus==='应届生'?'selected':''}>应届生</option>
+                    </select>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">期望城市</label>
+                    <input type="text" id="aq-expectedCity" placeholder="如: 北京、深圳" value="${p.expectedCity}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">工作年限</label>
+                    <div class="flex items-center gap-1">
+                      <input type="number" id="aq-minExp" placeholder="最少" min="0" max="50" value="${p.minExperience}"
+                        class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <span class="text-gray-300 text-xs flex-shrink-0">-</span>
+                      <input type="number" id="aq-maxExp" placeholder="最多" min="0" max="50" value="${p.maxExperience}"
+                        class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">期望薪资(元/月)</label>
+                    <div class="flex items-center gap-1">
+                      <input type="number" id="aq-minSalary" placeholder="最低" min="0" value="${p.minSalary}"
+                        class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <span class="text-gray-300 text-xs flex-shrink-0">-</span>
+                      <input type="number" id="aq-maxSalary" placeholder="最高" min="0" value="${p.maxSalary}"
+                        class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    </div>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">来源渠道</label>
+                    <select id="aq-channel" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <option value="">不限</option>
+                      <option value="BOSS直聘" ${p.sourceChannel==='BOSS直聘'?'selected':''}>BOSS直聘</option>
+                      <option value="智联招聘" ${p.sourceChannel==='智联招聘'?'selected':''}>智联招聘</option>
+                      <option value="猎头推荐" ${p.sourceChannel==='猎头推荐'?'selected':''}>猎头推荐</option>
+                      <option value="LinkedIn" ${p.sourceChannel==='LinkedIn'?'selected':''}>LinkedIn</option>
+                      <option value="校园招聘" ${p.sourceChannel==='校园招聘'?'selected':''}>校园招聘</option>
+                      <option value="内推" ${p.sourceChannel==='内推'?'selected':''}>内推</option>
+                    </select>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">简历原件</label>
+                    <select id="aq-hasResume" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                      <option value="">不限</option>
+                      <option value="true" ${p.hasResume==='true'?'selected':''}>有简历文件</option>
+                      <option value="false" ${p.hasResume==='false'?'selected':''}>无简历文件</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 教育 & 工作经历 -->
+              <div>
+                <div class="flex items-center gap-2 mb-2.5">
+                  <span class="text-[11px] font-bold text-yellow-500 flex items-center gap-1"><i class="fas fa-graduation-cap"></i>教育 & 经历</span>
+                  <div class="flex-1 h-px bg-gray-100"></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">毕业院校</label>
+                    <input type="text" id="aq-school" placeholder="如: 清华、北大" value="${p.schoolKeyword}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">所学专业</label>
+                    <input type="text" id="aq-major" placeholder="如: 计算机、金融" value="${p.majorKeyword}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">任职公司</label>
+                    <input type="text" id="aq-company" placeholder="公司名模糊匹配" value="${p.companyKeyword}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">所属行业</label>
+                    <input type="text" id="aq-industry" placeholder="如: 互联网、金融" value="${p.industryKeyword}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">匹配分 ≥</label>
+                    <input type="number" id="aq-minScore" placeholder="如: 80" min="0" max="100" value="${p.minMatchScore}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-[11px] text-gray-400">HR备注关键词</label>
+                    <input type="text" id="aq-hrNotes" placeholder="搜索备注内容" value="${p.hrNotesKeyword||''}"
+                      class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onkeydown="if(event.key==='Enter') archiveSearch(1)">
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">期望薪资(元/月)</label>
-            <div class="flex items-center gap-1">
-              <input type="number" id="aq-minSalary" placeholder="最低" min="0" value="${archiveState.params.minSalary}"
-                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <span class="text-gray-300 text-xs">-</span>
-              <input type="number" id="aq-maxSalary" placeholder="最高" min="0" value="${archiveState.params.maxSalary}"
-                class="border border-gray-200 rounded-lg px-2 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-400">
-            </div>
-          </div>
         </div>
 
-        <!-- 教育背景分组 -->
-        <div class="flex items-center gap-3">
-          <span class="text-[11px] font-bold text-yellow-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
-            <i class="fas fa-graduation-cap"></i>教育背景
-          </span>
-          <div class="flex-1 h-px bg-gray-100"></div>
-        </div>
-
-        <!-- 第四行：教育信息 -->
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">最高学历</label>
-            <select id="aq-highestEdu" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <option value="">不限</option>
-              <option value="博士" ${archiveState.params.highestEducation==='博士'?'selected':''}>博士</option>
-              <option value="硕士" ${archiveState.params.highestEducation==='硕士'?'selected':''}>硕士</option>
-              <option value="本科" ${archiveState.params.highestEducation==='本科'?'selected':''}>本科</option>
-              <option value="大专" ${archiveState.params.highestEducation==='大专'?'selected':''}>大专</option>
-              <option value="高中" ${archiveState.params.highestEducation==='高中'?'selected':''}>高中/中专</option>
-            </select>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">毕业院校</label>
-            <input type="text" id="aq-school" placeholder="如: 清华、北大" value="${archiveState.params.schoolKeyword}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">所学专业</label>
-            <input type="text" id="aq-major" placeholder="如: 计算机、金融" value="${archiveState.params.majorKeyword}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-        </div>
-
-        <!-- 工作经历分组 -->
-        <div class="flex items-center gap-3">
-          <span class="text-[11px] font-bold text-purple-500 uppercase tracking-wider whitespace-nowrap flex items-center gap-1.5">
-            <i class="fas fa-building"></i>工作经历
-          </span>
-          <div class="flex-1 h-px bg-gray-100"></div>
-        </div>
-
-        <!-- 第五行：工作经历 -->
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">技能/技术栈</label>
-            <input type="text" id="aq-skill" placeholder="逗号分隔多个技能" value="${archiveState.params.skillKeyword}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">任职公司</label>
-            <input type="text" id="aq-company" placeholder="公司名模糊匹配" value="${archiveState.params.companyKeyword}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">所属行业</label>
-            <input type="text" id="aq-industry" placeholder="如: 互联网、金融" value="${archiveState.params.industryKeyword}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">来源渠道</label>
-            <select id="aq-channel" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <option value="">不限</option>
-              <option value="BOSS直聘" ${archiveState.params.sourceChannel==='BOSS直聘'?'selected':''}>BOSS直聘</option>
-              <option value="智联招聘" ${archiveState.params.sourceChannel==='智联招聘'?'selected':''}>智联招聘</option>
-              <option value="猎头推荐" ${archiveState.params.sourceChannel==='猎头推荐'?'selected':''}>猎头推荐</option>
-              <option value="LinkedIn" ${archiveState.params.sourceChannel==='LinkedIn'?'selected':''}>LinkedIn</option>
-              <option value="校园招聘" ${archiveState.params.sourceChannel==='校园招聘'?'selected':''}>校园招聘</option>
-              <option value="内推" ${archiveState.params.sourceChannel==='内推'?'selected':''}>内推</option>
-            </select>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">匹配分 ≥</label>
-            <input type="number" id="aq-minScore" placeholder="如: 80" min="0" max="100" value="${archiveState.params.minMatchScore}"
-              class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[11px] text-gray-400">简历原件</label>
-            <select id="aq-hasResume" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-              <option value="">不限</option>
-              <option value="true" ${archiveState.params.hasResume==='true'?'selected':''}>有简历文件</option>
-              <option value="false" ${archiveState.params.hasResume==='false'?'selected':''}>无简历文件</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- 备注关键词 -->
-        <div class="grid grid-cols-1 gap-3">
-          <div class="flex items-center gap-3">
-            <label class="text-[11px] text-gray-400 w-16 flex-shrink-0">HR备注</label>
-            <input type="text" id="aq-hrNotes" placeholder="搜索HR备注内容..." value="${archiveState.params.hrNotesKeyword || ''}"
-              class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              onkeydown="if(event.key==='Enter') archiveSearch(1)">
-          </div>
-        </div>
-
-      </div>
-
-      <!-- 结果区 -->
-      <div class="flex-1 overflow-auto px-6 py-4">
+        <!-- 结果区 -->
         <div id="archiveResults">
           <div class="flex flex-col items-center justify-center py-20 text-gray-300">
             <i class="fas fa-search text-5xl mb-4 opacity-30"></i>
-            <p class="text-base font-medium text-gray-400">设置查询条件，点击「开始查询」</p>
-            <p class="text-sm text-gray-300 mt-1">支持多个条件联合过滤，精准定位档案</p>
+            <p class="text-base font-medium text-gray-400">设置查询条件，点击「查询」</p>
+            <p class="text-sm text-gray-300 mt-1">支持多条件联合过滤，精准定位档案</p>
           </div>
         </div>
+
       </div>
     </div>
   `
+}
+
+function archiveToggleAdvanced() {
+  const panel = document.getElementById('advancedPanel')
+  const arrow  = document.getElementById('advancedArrow')
+  if (!panel) return
+  const isHidden = panel.classList.contains('hidden')
+  panel.classList.toggle('hidden', !isHidden)
+  if (arrow) arrow.style.transform = isHidden ? 'rotate(180deg)' : ''
 }
 
 // 收集档案查询条件并执行搜索
