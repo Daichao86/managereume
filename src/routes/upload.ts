@@ -179,18 +179,17 @@ upload.post('/config', async (c) => {
   try {
     const { openaiKey, openaiBaseUrl } = await c.req.json()
     if (!openaiKey) return c.json({ success: false, message: 'API Key不能为空' }, 400)
-    // 规范化 base URL：去除尾部斜杠，确保以 /v1 结尾
-    let normalizedUrl = (openaiBaseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
-    if (!normalizedUrl.match(/\/v\d+$/)) normalizedUrl = normalizedUrl + '/v1'
+    // 仅去除末尾多余斜杠，不修改路径
+    const normalizedUrl = (openaiBaseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
     const testRes = await fetch(`${normalizedUrl}/models`, {
       headers: { 'Authorization': `Bearer ${openaiKey}` }
     })
     if (!testRes.ok) {
       if (testRes.status === 401) return c.json({ success: false, message: 'API Key无效或已过期，请重新填写正确的Key。' }, 400)
-      if (testRes.status === 404) return c.json({ success: false, message: 'API Base URL地址不存在(404)，请确认填写格式：https://api.openai.com/v1 或您的代理地址（需以/v1结尾）。当前地址：' + normalizedUrl }, 400)
+      if (testRes.status === 404) return c.json({ success: false, message: 'API地址不存在(404)，请确认Base URL填写正确。当前地址：' + normalizedUrl }, 400)
       return c.json({ success: false, message: 'API验证失败(' + testRes.status + ')，请检查Key和Base URL后重试。' }, 400)
     }
-    return c.json({ success: true, message: 'API Key验证成功，Base URL：' + normalizedUrl })
+    return c.json({ success: true, message: 'API Key验证成功' })
   } catch (e: any) {
     return c.json({ success: false, message: `验证失败: ${e.message}` }, 500)
   }

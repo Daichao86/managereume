@@ -3492,11 +3492,9 @@ function toggleApiKeyVisibility() {
 }
 
 function normalizeApiBaseUrl(url) {
-  let u = (url || '').trim().replace(/\/+$/, '')
-  if (!u) return 'https://api.openai.com/v1'
-  // 若不以 /v数字 结尾，则补 /v1（防止用户填 https://xxx.com 或 https://xxx.com/）
-  if (!u.match(/\/v\d+$/)) u = u + '/v1'
-  return u
+  // 仅去除末尾多余斜杠，不自动增加路径
+  const u = (url || '').trim().replace(/\/+$/, '')
+  return u || 'https://api.openai.com/v1'
 }
 
 function saveApiSettings() {
@@ -3507,7 +3505,7 @@ function saveApiSettings() {
   localStorage.setItem('openai_key', state.openaiKey)
   localStorage.setItem('openai_base_url', state.openaiBaseUrl)
   updateAiStatus()
-  showToast('配置保存成功！实际生效地址：' + state.openaiBaseUrl, 'success')
+  showToast('配置保存成功！', 'success')
 }
 
 async function testApiConnection() {
@@ -3515,7 +3513,7 @@ async function testApiConnection() {
   const baseUrl = normalizeApiBaseUrl(document.getElementById('apiBaseUrlInput').value)
   if (!key) { showToast('请先输入API Key', 'warning'); return }
   
-  showToast('正在测试连接（地址：' + baseUrl + '）...', 'info')
+  showToast('正在测试连接...', 'info')
   try {
     const res = await apiRequest('/api/upload/config', {
       method: 'POST',
