@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
 import mysql from "mysql2/promise";
-import { Client } from "minio";
+import COS from "cos-nodejs-sdk-v5";
 const pool = mysql.createPool({
   host: process.env.DB_HOST || "127.0.0.1",
   port: parseInt(process.env.DB_PORT || "3306"),
@@ -620,46 +620,86 @@ class MySQLDatabase {
   }
 }
 const db = new MySQLDatabase();
-const BUCKET = process.env.MINIO_BUCKET || "resumes";
-const minioClient = new Client({
-  endPoint: process.env.MINIO_ENDPOINT || "127.0.0.1",
-  port: parseInt(process.env.MINIO_PORT || "9000"),
-  useSSL: process.env.MINIO_USE_SSL === "true",
-  accessKey: process.env.MINIO_ACCESS_KEY || "minioadmin",
-  secretKey: process.env.MINIO_SECRET_KEY || "minioadmin"
+const BUCKET = process.env.COS_BUCKET || "resumes-1234567890";
+const REGION = process.env.COS_REGION || "ap-guangzhou";
+const cos = new COS({
+  SecretId: process.env.COS_SECRET_ID || "",
+  SecretKey: process.env.COS_SECRET_KEY || "",
+  // 请求超时 30 秒
+  Timeout: 3e4
 });
-async function ensureBucket() {
-  try {
-    const exists = await minioClient.bucketExists(BUCKET);
-    if (!exists) {
-      await minioClient.makeBucket(BUCKET, "us-east-1");
-      console.log(`✅ MinIO Bucket "${BUCKET}" 创建成功`);
-    }
-  } catch (err) {
-    console.error("❌ MinIO 初始化失败，请检查连接配置:", err);
-  }
-}
-ensureBucket();
 function generateFileKey(candidateId, fileName) {
   const ts = Date.now();
-  const safeName = fileName.replace(/[^a-zA-Z0-9.\-_\u4e00-\u9fa5]/g, "_");
+  const safeName = fileName.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
   return `resumes/${candidateId}/${ts}-${safeName}`;
 }
 async function uploadFile(key, buffer, mimeType) {
-  await minioClient.putObject(BUCKET, key, buffer, buffer.length, {
-    "Content-Type": mimeType
+  await new Promise((resolve, reject) => {
+    cos.putObject(
+      {
+        Bucket: BUCKET,
+        Region: REGION,
+        Key: key,
+        Body: buffer,
+        ContentType: mimeType,
+        ContentLength: buffer.length
+        // 服务端加密（可选，推荐开启）
+        // ServerSideEncryption: 'AES256',
+      },
+      (err) => {
+        if (err) reject(new Error(`COS 上传失败: ${err.message || JSON.stringify(err)}`));
+        else resolve();
+      }
+    );
   });
 }
 async function getPresignedUrl(key, expirySeconds = 3600) {
-  return minioClient.presignedGetObject(BUCKET, key, expirySeconds);
+  return new Promise((resolve, reject) => {
+    cos.getObjectUrl(
+      {
+        Bucket: BUCKET,
+        Region: REGION,
+        Key: key,
+        Sign: true,
+        Expires: expirySeconds
+      },
+      (err, data) => {
+        if (err) reject(new Error(`获取预签名URL失败: ${err.message || JSON.stringify(err)}`));
+        else resolve(data.Url);
+      }
+    );
+  });
 }
 async function getDownloadUrl(key, fileName, expirySeconds = 3600) {
-  return minioClient.presignedGetObject(BUCKET, key, expirySeconds, {
-    "response-content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+  return new Promise((resolve, reject) => {
+    cos.getObjectUrl(
+      {
+        Bucket: BUCKET,
+        Region: REGION,
+        Key: key,
+        Sign: true,
+        Expires: expirySeconds,
+        Query: {
+          "response-content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+        }
+      },
+      (err, data) => {
+        if (err) reject(new Error(`获取下载URL失败: ${err.message || JSON.stringify(err)}`));
+        else resolve(data.Url);
+      }
+    );
   });
 }
 async function deleteFile(key) {
-  await minioClient.removeObject(BUCKET, key);
+  await new Promise((resolve, reject) => {
+    cos.deleteObject(
+      { Bucket: BUCKET, Region: REGION, Key: key },
+      (err) => {
+        if (err) reject(new Error(`COS 删除失败: ${err.message || JSON.stringify(err)}`));
+        else resolve();
+      }
+    );
+  });
 }
 const candidates = new Hono();
 candidates.get("/", async (c) => {

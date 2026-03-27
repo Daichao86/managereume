@@ -1,40 +1,22 @@
 // ==========================================
-// 文件存储服务 - MinIO / S3 兼容对象存储
+// 文件存储服务 - 腾讯云 COS（对象存储）
 // 依赖环境变量:
-//   MINIO_ENDPOINT  - MinIO 服务地址 (如 192.168.1.100)
-//   MINIO_PORT      - 端口 (默认 9000)
-//   MINIO_USE_SSL   - 是否启用 SSL (默认 false)
-//   MINIO_ACCESS_KEY
-//   MINIO_SECRET_KEY
-//   MINIO_BUCKET    - 存储桶名称 (默认 resumes)
+//   COS_SECRET_ID   - 腾讯云 SecretId
+//   COS_SECRET_KEY  - 腾讯云 SecretKey
+//   COS_BUCKET      - 存储桶名称，含 AppId，如 resumes-1234567890
+//   COS_REGION      - 地域，如 ap-guangzhou / ap-shanghai / ap-beijing
 // ==========================================
-import { Client } from 'minio'
+import COS from 'cos-nodejs-sdk-v5'
 
-const BUCKET = process.env.MINIO_BUCKET || 'resumes'
+const BUCKET = process.env.COS_BUCKET  || 'resumes-1234567890'
+const REGION = process.env.COS_REGION  || 'ap-guangzhou'
 
-const minioClient = new Client({
-  endPoint:  process.env.MINIO_ENDPOINT  || '127.0.0.1',
-  port:      parseInt(process.env.MINIO_PORT || '9000'),
-  useSSL:    process.env.MINIO_USE_SSL === 'true',
-  accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-  secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+const cos = new COS({
+  SecretId:  process.env.COS_SECRET_ID  || '',
+  SecretKey: process.env.COS_SECRET_KEY || '',
+  // 请求超时 30 秒
+  Timeout: 30000,
 })
-
-// ==========================================
-// 初始化：确保 Bucket 存在
-// ==========================================
-async function ensureBucket() {
-  try {
-    const exists = await minioClient.bucketExists(BUCKET)
-    if (!exists) {
-      await minioClient.makeBucket(BUCKET, 'us-east-1')
-      console.log(`✅ MinIO Bucket "${BUCKET}" 创建成功`)
-    }
-  } catch (err) {
-    console.error('❌ MinIO 初始化失败，请检查连接配置:', err)
-  }
-}
-ensureBucket()
 
 // ==========================================
 // 生成对象 Key（唯一路径）
@@ -42,8 +24,8 @@ ensureBucket()
 // ==========================================
 export function generateFileKey(candidateId: number, fileName: string): string {
   const ts = Date.now()
-  // 清理文件名中的特殊字符
-  const safeName = fileName.replace(/[^a-zA-Z0-9.\-_\u4e00-\u9fa5]/g, '_')
+  // 清理文件名中的特殊字符，保留中文、字母、数字、点和横线
+  const safeName = fileName.replace(/[^\w.\-\u4e00-\u9fa5]/g, '_')
   return `resumes/${candidateId}/${ts}-${safeName}`
 }
 
@@ -55,25 +37,69 @@ export async function uploadFile(
   buffer: Buffer,
   mimeType: string
 ): Promise<void> {
-  await minioClient.putObject(BUCKET, key, buffer, buffer.length, {
-    'Content-Type': mimeType,
+  await new Promise<void>((resolve, reject) => {
+    cos.putObject(
+      {
+        Bucket: BUCKET,
+        Region: REGION,
+        Key: key,
+        Body: buffer,
+        ContentType: mimeType,
+        ContentLength: buffer.length,
+        // 服务端加密（可选，推荐开启）
+        // ServerSideEncryption: 'AES256',
+      },
+      (err) => {
+        if (err) reject(new Error(`COS 上传失败: ${err.message || JSON.stringify(err)}`))
+        else resolve()
+      }
+    )
   })
 }
 
 // ==========================================
-// 生成临时预签名访问 URL（有效期默认 1 小时）
-// 用于前端直接预览/下载，无需经过 Node.js 中转
+// 获取预签名访问 URL（有效期默认 1 小时）
+// 用于前端直接预览，无需经过 Node.js 中转
 // ==========================================
 export async function getPresignedUrl(key: string, expirySeconds = 3600): Promise<string> {
-  return minioClient.presignedGetObject(BUCKET, key, expirySeconds)
+  return new Promise((resolve, reject) => {
+    cos.getObjectUrl(
+      {
+        Bucket: BUCKET,
+        Region: REGION,
+        Key: key,
+        Sign: true,
+        Expires: expirySeconds,
+      },
+      (err, data) => {
+        if (err) reject(new Error(`获取预签名URL失败: ${err.message || JSON.stringify(err)}`))
+        else resolve(data.Url)
+      }
+    )
+  })
 }
 
 // ==========================================
 // 生成强制下载的预签名 URL
 // ==========================================
 export async function getDownloadUrl(key: string, fileName: string, expirySeconds = 3600): Promise<string> {
-  return minioClient.presignedGetObject(BUCKET, key, expirySeconds, {
-    'response-content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
+  return new Promise((resolve, reject) => {
+    cos.getObjectUrl(
+      {
+        Bucket: BUCKET,
+        Region: REGION,
+        Key: key,
+        Sign: true,
+        Expires: expirySeconds,
+        Query: {
+          'response-content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        },
+      },
+      (err, data) => {
+        if (err) reject(new Error(`获取下载URL失败: ${err.message || JSON.stringify(err)}`))
+        else resolve(data.Url)
+      }
+    )
   })
 }
 
@@ -81,27 +107,49 @@ export async function getDownloadUrl(key: string, fileName: string, expirySecond
 // 删除文件
 // ==========================================
 export async function deleteFile(key: string): Promise<void> {
-  await minioClient.removeObject(BUCKET, key)
-}
-
-// ==========================================
-// 获取文件 Buffer（用于 Node.js 中转流式输出，可选）
-// ==========================================
-export async function getFileBuffer(key: string): Promise<Buffer> {
-  const stream = await minioClient.getObject(BUCKET, key)
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    stream.on('data', chunk => chunks.push(chunk))
-    stream.on('end', () => resolve(Buffer.concat(chunks)))
-    stream.on('error', reject)
+  await new Promise<void>((resolve, reject) => {
+    cos.deleteObject(
+      { Bucket: BUCKET, Region: REGION, Key: key },
+      (err) => {
+        if (err) reject(new Error(`COS 删除失败: ${err.message || JSON.stringify(err)}`))
+        else resolve()
+      }
+    )
   })
 }
 
 // ==========================================
-// 获取文件基本信息（大小、类型等）
+// 获取文件 Buffer（Node.js 中转流式输出，备用）
 // ==========================================
-export async function getFileStat(key: string) {
-  return minioClient.statObject(BUCKET, key)
+export async function getFileBuffer(key: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    cos.getObject(
+      { Bucket: BUCKET, Region: REGION, Key: key },
+      (err, data) => {
+        if (err) reject(new Error(`COS 下载失败: ${err.message || JSON.stringify(err)}`))
+        else resolve(data.Body as Buffer)
+      }
+    )
+  })
 }
 
-export { minioClient, BUCKET }
+// ==========================================
+// 获取文件基本信息（大小、类型、最后修改时间）
+// ==========================================
+export async function getFileStat(key: string): Promise<{ size: number; contentType: string; lastModified: string }> {
+  return new Promise((resolve, reject) => {
+    cos.headObject(
+      { Bucket: BUCKET, Region: REGION, Key: key },
+      (err, data) => {
+        if (err) reject(new Error(`COS 获取文件信息失败: ${err.message || JSON.stringify(err)}`))
+        else resolve({
+          size: parseInt(data.headers?.['content-length'] || '0'),
+          contentType: data.headers?.['content-type'] || '',
+          lastModified: data.headers?.['last-modified'] || '',
+        })
+      }
+    )
+  })
+}
+
+export { cos, BUCKET, REGION }

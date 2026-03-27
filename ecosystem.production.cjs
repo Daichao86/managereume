@@ -13,29 +13,27 @@ module.exports = {
         PORT: 3000,
         HOST: '0.0.0.0',
 
-        // MySQL 配置
+        // ── MySQL 配置 ──────────────────────
         DB_HOST: '127.0.0.1',
         DB_PORT: '3306',
         DB_USER: 'resume_user',
-        DB_PASSWORD: 'your_strong_password',  // ← 修改为你的密码
+        DB_PASSWORD: 'your_strong_password',   // ← 改为你的密码
         DB_NAME: 'resume_db',
 
-        // MinIO 配置
-        MINIO_ENDPOINT: '127.0.0.1',
-        MINIO_PORT: '9000',
-        MINIO_USE_SSL: 'false',
-        MINIO_ACCESS_KEY: 'minioadmin',       // ← 修改为你的 AccessKey
-        MINIO_SECRET_KEY: 'minioadmin',       // ← 修改为你的 SecretKey
-        MINIO_BUCKET: 'resumes',
+        // ── 腾讯云 COS 配置 ─────────────────
+        COS_SECRET_ID:  '',   // ← 填入腾讯云 SecretId
+        COS_SECRET_KEY: '',   // ← 填入腾讯云 SecretKey
+        COS_BUCKET:     'resumes-1234567890',                   // ← 填入桶名-AppId
+        COS_REGION:     'ap-guangzhou',                         // ← 填入地域
 
-        // OpenAI（可选）
-        // OPENAI_API_KEY: 'sk-xxx',
+        // ── OpenAI（可选）──────────────────
+        // OPENAI_API_KEY:  'sk-xxx',
         // OPENAI_BASE_URL: 'https://api.openai.com/v1',
       },
       error_file: './logs/err.log',
-      out_file: './logs/out.log',
+      out_file:   './logs/out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      merge_logs: true
+      merge_logs: true,
     }
   ]
 }

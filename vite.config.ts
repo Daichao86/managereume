@@ -18,7 +18,7 @@ export default defineConfig({
         '@hono/node-server/serve-static',
         'mysql2',
         'mysql2/promise',
-        'minio',
+        'cos-nodejs-sdk-v5',
         'better-sqlite3',
       ],
     },
