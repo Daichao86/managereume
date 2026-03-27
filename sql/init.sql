@@ -35,11 +35,11 @@ CREATE TABLE IF NOT EXISTS candidates (
   hr_notes      TEXT         COMMENT 'HR备注',
   match_score   FLOAT        COMMENT 'AI匹配分数',
   raw_resume_text MEDIUMTEXT COMMENT '简历原始文本',
-  -- 简历文件元数据（文件本身存 MinIO）
+  -- 简历文件元数据（文件原件存服务器本地磁盘 uploads/resumes/ 目录）
   resume_file_name  VARCHAR(255) COMMENT '简历文件名',
   resume_file_type  VARCHAR(100) COMMENT '简历文件MIME类型',
   resume_file_size  INT          COMMENT '简历文件大小(字节)',
-  resume_file_key   VARCHAR(500) COMMENT 'MinIO对象Key',
+  resume_file_key   VARCHAR(500) COMMENT '本地文件相对路径(相对于UPLOAD_DIR)',
   resume_uploaded_at DATETIME   COMMENT '简历上传时间',
   created_at    DATETIME     DEFAULT CURRENT_TIMESTAMP,
   updated_at    DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

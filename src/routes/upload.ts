@@ -1,14 +1,14 @@
 // ==========================================
-// 简历上传与AI解析API路由（MySQL + MinIO版）
+// 简历上传与AI解析API路由（MySQL + 本地文件存储版）
 // ==========================================
 import { Hono } from 'hono'
 import { db } from '../lib/database'
-import { uploadFile, generateFileKey, getPresignedUrl } from '../lib/storage'
+import { uploadFile, generateFileKey } from '../lib/storage'
 import { parseResumeWithAI, extractTextFromFile, calculateProfileCompleteness } from '../lib/ai-parser'
 
 const upload = new Hono()
 
-// POST /api/upload/resume - 上传文件 + AI解析 + 存 MinIO
+// POST /api/upload/resume - 上传文件 + AI解析 + 保存到本地磁盘
 upload.post('/resume', async (c) => {
   try {
     const apiKey = c.req.header('X-OpenAI-Key') || process.env.OPENAI_API_KEY || ''
@@ -67,11 +67,11 @@ upload.post('/resume', async (c) => {
         matchScore: calculateProfileCompleteness(parseResult)
       })
 
-      // 上传原始文件到 MinIO
+      // 保存原始文件到本地磁盘
       const fileKey = generateFileKey(candidate.id!, file.name)
       await uploadFile(fileKey, nodeBuffer, mimeType)
 
-      // 更新 MySQL 简历元数据
+      // 更新 MySQL 简历元数据（fileKey 存的是相对路径）
       await db.saveResumeFileMeta(candidate.id!, {
         fileName: file.name,
         fileType: mimeType,
@@ -79,10 +79,10 @@ upload.post('/resume', async (c) => {
         fileKey,
       })
 
-      // 生成预览 URL（1小时有效）
-      const previewUrl = await getPresignedUrl(fileKey, 3600)
+      // 本地存储：预览/下载 URL 均指向本系统 API
+      const previewUrl = `/api/candidates/${candidate.id}/resume`
 
-      // 更新任务
+      // 更新任务状态
       await db.updateParseTask(task.id!, {
         status: 'completed',
         candidateId: candidate.id,
@@ -121,7 +121,7 @@ upload.post('/resume', async (c) => {
   }
 })
 
-// POST /api/upload/text - 粘贴文本解析
+// POST /api/upload/text - 粘贴文本解析（无需文件上传，直接解析文字简历）
 upload.post('/text', async (c) => {
   try {
     const apiKey = c.req.header('X-OpenAI-Key') || process.env.OPENAI_API_KEY || ''
@@ -160,7 +160,7 @@ upload.post('/text', async (c) => {
   }
 })
 
-// GET /api/upload/task/:id - 任务状态
+// GET /api/upload/task/:id - 查询解析任务状态
 upload.get('/task/:id', async (c) => {
   const id = parseInt(c.req.param('id'))
   const task = await db.getParseTask(id)
@@ -168,7 +168,7 @@ upload.get('/task/:id', async (c) => {
   return c.json({ success: true, data: task })
 })
 
-// POST /api/upload/config - 验证 API Key
+// POST /api/upload/config - 验证并保存 OpenAI API Key
 upload.post('/config', async (c) => {
   try {
     const { openaiKey, openaiBaseUrl } = await c.req.json()

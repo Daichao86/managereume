@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
 import mysql from "mysql2/promise";
-import COS from "cos-nodejs-sdk-v5";
+import fs from "fs";
+import path from "path";
 const pool = mysql.createPool({
   host: process.env.DB_HOST || "127.0.0.1",
   port: parseInt(process.env.DB_PORT || "3306"),
@@ -620,86 +621,49 @@ class MySQLDatabase {
   }
 }
 const db = new MySQLDatabase();
-const BUCKET = process.env.COS_BUCKET || "resumes-1234567890";
-const REGION = process.env.COS_REGION || "ap-guangzhou";
-const cos = new COS({
-  SecretId: process.env.COS_SECRET_ID || "",
-  SecretKey: process.env.COS_SECRET_KEY || "",
-  // 请求超时 30 秒
-  Timeout: 3e4
-});
+const UPLOAD_DIR = process.env.UPLOAD_DIR ? path.resolve(process.env.UPLOAD_DIR) : path.join(process.cwd(), "uploads");
+const RESUMES_DIR = path.join(UPLOAD_DIR, "resumes");
+if (!fs.existsSync(RESUMES_DIR)) {
+  fs.mkdirSync(RESUMES_DIR, { recursive: true });
+  console.log(`📁 创建文件存储目录: ${RESUMES_DIR}`);
+}
 function generateFileKey(candidateId, fileName) {
   const ts = Date.now();
   const safeName = fileName.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
-  return `resumes/${candidateId}/${ts}-${safeName}`;
+  return path.join("resumes", String(candidateId), `${ts}-${safeName}`);
 }
-async function uploadFile(key, buffer, mimeType) {
-  await new Promise((resolve, reject) => {
-    cos.putObject(
-      {
-        Bucket: BUCKET,
-        Region: REGION,
-        Key: key,
-        Body: buffer,
-        ContentType: mimeType,
-        ContentLength: buffer.length
-        // 服务端加密（可选，推荐开启）
-        // ServerSideEncryption: 'AES256',
-      },
-      (err) => {
-        if (err) reject(new Error(`COS 上传失败: ${err.message || JSON.stringify(err)}`));
-        else resolve();
-      }
-    );
-  });
+function keyToAbsPath(key) {
+  const normalized = path.normalize(key).replace(/^(\.\.(\/|\\|$))+/, "");
+  return path.join(UPLOAD_DIR, normalized);
 }
-async function getPresignedUrl(key, expirySeconds = 3600) {
-  return new Promise((resolve, reject) => {
-    cos.getObjectUrl(
-      {
-        Bucket: BUCKET,
-        Region: REGION,
-        Key: key,
-        Sign: true,
-        Expires: expirySeconds
-      },
-      (err, data) => {
-        if (err) reject(new Error(`获取预签名URL失败: ${err.message || JSON.stringify(err)}`));
-        else resolve(data.Url);
-      }
-    );
-  });
+async function uploadFile(key, buffer, _mimeType) {
+  const absPath = keyToAbsPath(key);
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  await fs.promises.writeFile(absPath, buffer);
 }
-async function getDownloadUrl(key, fileName, expirySeconds = 3600) {
-  return new Promise((resolve, reject) => {
-    cos.getObjectUrl(
-      {
-        Bucket: BUCKET,
-        Region: REGION,
-        Key: key,
-        Sign: true,
-        Expires: expirySeconds,
-        Query: {
-          "response-content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`
-        }
-      },
-      (err, data) => {
-        if (err) reject(new Error(`获取下载URL失败: ${err.message || JSON.stringify(err)}`));
-        else resolve(data.Url);
-      }
-    );
-  });
+async function getFileBuffer(key) {
+  const absPath = keyToAbsPath(key);
+  if (!fs.existsSync(absPath)) {
+    throw new Error(`文件不存在: ${key}`);
+  }
+  return fs.promises.readFile(absPath);
 }
 async function deleteFile(key) {
-  await new Promise((resolve, reject) => {
-    cos.deleteObject(
-      { Bucket: BUCKET, Region: REGION, Key: key },
-      (err) => {
-        if (err) reject(new Error(`COS 删除失败: ${err.message || JSON.stringify(err)}`));
-        else resolve();
-      }
-    );
-  });
+  const absPath = keyToAbsPath(key);
+  if (fs.existsSync(absPath)) {
+    await fs.promises.unlink(absPath);
+    const dir = path.dirname(absPath);
+    const remaining = fs.readdirSync(dir);
+    if (remaining.length === 0) {
+      fs.rmdirSync(dir);
+    }
+  }
+}
+function getFileStat(key) {
+  const absPath = keyToAbsPath(key);
+  if (!fs.existsSync(absPath)) return void 0;
+  const stat = fs.statSync(absPath);
+  return { size: stat.size, mtime: stat.mtime };
 }
 const candidates = new Hono();
 candidates.get("/", async (c) => {
@@ -717,7 +681,13 @@ candidates.get("/", async (c) => {
     minMatchScore: q.minMatchScore ? parseFloat(q.minMatchScore) : void 0,
     isBlacklist: q.isBlacklist === "true" ? true : q.isBlacklist === "false" ? false : void 0
   });
-  return c.json({ success: true, data: list, total, page: parseInt(q.page || "1"), pageSize: parseInt(q.pageSize || "10") });
+  return c.json({
+    success: true,
+    data: list,
+    total,
+    page: parseInt(q.page || "1"),
+    pageSize: parseInt(q.pageSize || "10")
+  });
 });
 candidates.get("/stats/overview", async (c) => {
   const stats = await db.getStatistics();
@@ -755,8 +725,12 @@ candidates.patch("/:id/status", async (c) => {
     const id = parseInt(c.req.param("id"));
     const { candidateStatus } = await c.req.json();
     const validStatuses = ["active", "interviewing", "hired", "rejected", "blacklist", "archived"];
-    if (!validStatuses.includes(candidateStatus)) return c.json({ success: false, message: "无效的状态值" }, 400);
-    const updated = await db.updateCandidate(id, { candidateStatus, isBlacklist: candidateStatus === "blacklist" });
+    if (!validStatuses.includes(candidateStatus))
+      return c.json({ success: false, message: "无效的状态值" }, 400);
+    const updated = await db.updateCandidate(id, {
+      candidateStatus,
+      isBlacklist: candidateStatus === "blacklist"
+    });
     if (!updated) return c.json({ success: false, message: "候选人不存在" }, 404);
     return c.json({ success: true, data: updated, message: "状态更新成功" });
   } catch (e) {
@@ -804,44 +778,44 @@ candidates.get("/:id/resume/info", async (c) => {
   if (!candidate.resumeFileKey) {
     return c.json({ success: true, hasFile: false, message: "暂无简历文件" });
   }
-  try {
-    const [previewUrl, downloadUrl] = await Promise.all([
-      getPresignedUrl(candidate.resumeFileKey, 3600),
-      getDownloadUrl(candidate.resumeFileKey, candidate.resumeFileName || "resume", 3600)
-    ]);
-    return c.json({
-      success: true,
-      hasFile: true,
-      data: {
-        fileName: candidate.resumeFileName,
-        fileType: candidate.resumeFileType,
-        fileSize: candidate.resumeFileSize,
-        uploadedAt: candidate.resumeUploadedAt,
-        previewUrl,
-        // 前端 iframe/img 直接使用，1小时有效
-        downloadUrl
-        // 强制下载链接
-      }
-    });
-  } catch (e) {
-    return c.json({ success: false, message: `获取文件信息失败: ${e.message}` }, 500);
-  }
+  const stat = getFileStat(candidate.resumeFileKey);
+  return c.json({
+    success: true,
+    hasFile: true,
+    data: {
+      fileName: candidate.resumeFileName,
+      fileType: candidate.resumeFileType,
+      fileSize: stat?.size ?? candidate.resumeFileSize,
+      uploadedAt: candidate.resumeUploadedAt,
+      // 本地存储：预览和下载均走同一接口，通过 ?download=1 区分
+      previewUrl: `/api/candidates/${id}/resume`,
+      downloadUrl: `/api/candidates/${id}/resume?download=1`
+    }
+  });
 });
 candidates.get("/:id/resume", async (c) => {
   const id = parseInt(c.req.param("id"));
   const candidate = await db.getCandidateById(id);
   if (!candidate) return c.json({ success: false, message: "候选人不存在" }, 404);
-  if (!candidate.resumeFileKey) return c.json({ success: false, message: "该候选人暂无上传的简历文件" }, 404);
+  if (!candidate.resumeFileKey)
+    return c.json({ success: false, message: "该候选人暂无上传的简历文件" }, 404);
   try {
     const download = c.req.query("download") === "1";
-    if (!download) {
-      const url2 = await getPresignedUrl(candidate.resumeFileKey, 3600);
-      return c.redirect(url2, 302);
-    }
-    const url = await getDownloadUrl(candidate.resumeFileKey, candidate.resumeFileName || "resume", 3600);
-    return c.redirect(url, 302);
+    const fileBuffer = await getFileBuffer(candidate.resumeFileKey);
+    const mimeType = candidate.resumeFileType || "application/octet-stream";
+    const safeFileName = encodeURIComponent(candidate.resumeFileName || "resume");
+    const disposition = download ? `attachment; filename*=UTF-8''${safeFileName}` : `inline; filename*=UTF-8''${safeFileName}`;
+    return new Response(fileBuffer, {
+      status: 200,
+      headers: {
+        "Content-Type": mimeType,
+        "Content-Disposition": disposition,
+        "Content-Length": String(fileBuffer.length),
+        "Cache-Control": "private, no-cache"
+      }
+    });
   } catch (e) {
-    return c.json({ success: false, message: `文件获取失败: ${e.message}` }, 500);
+    return c.json({ success: false, message: `文件读取失败: ${e.message}` }, 500);
   }
 });
 candidates.post("/:id/resume", async (c) => {
@@ -854,12 +828,10 @@ candidates.post("/:id/resume", async (c) => {
     if (!file) return c.json({ success: false, message: "请选择要上传的文件" }, 400);
     const allowedExts = ["pdf", "doc", "docx", "jpg", "jpeg", "png", "webp"];
     const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
-    if (!allowedExts.includes(fileExt)) {
+    if (!allowedExts.includes(fileExt))
       return c.json({ success: false, message: "仅支持 PDF、Word、JPG、PNG 格式" }, 400);
-    }
-    if (file.size > 20 * 1024 * 1024) {
+    if (file.size > 20 * 1024 * 1024)
       return c.json({ success: false, message: "文件大小不能超过 20MB" }, 400);
-    }
     if (candidate.resumeFileKey) {
       try {
         await deleteFile(candidate.resumeFileKey);
@@ -867,20 +839,24 @@ candidates.post("/:id/resume", async (c) => {
       }
     }
     const fileKey = generateFileKey(id, file.name);
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const buffer = Buffer.from(await file.arrayBuffer());
     const mimeType = file.type || `application/${fileExt}`;
-    await uploadFile(fileKey, fileBuffer, mimeType);
+    await uploadFile(fileKey, buffer, mimeType);
     await db.saveResumeFileMeta(id, {
       fileName: file.name,
       fileType: mimeType,
       fileSize: file.size,
       fileKey
     });
-    const previewUrl = await getPresignedUrl(fileKey, 3600);
     return c.json({
       success: true,
       message: "简历文件上传成功",
-      data: { fileName: file.name, fileType: mimeType, fileSize: file.size, previewUrl }
+      data: {
+        fileName: file.name,
+        fileType: mimeType,
+        fileSize: file.size,
+        previewUrl: `/api/candidates/${id}/resume`
+      }
     });
   } catch (e) {
     return c.json({ success: false, message: `上传失败: ${e.message}` }, 500);
@@ -892,8 +868,7 @@ candidates.delete("/:id/resume", async (c) => {
   if (!fileKey) return c.json({ success: false, message: "文件不存在" }, 404);
   try {
     await deleteFile(fileKey);
-  } catch (e) {
-    console.warn("MinIO 删除文件失败（继续清理元数据）:", e);
+  } catch {
   }
   await db.clearResumeFileMeta(id);
   return c.json({ success: true, message: "简历文件已删除" });
@@ -1253,7 +1228,7 @@ upload.post("/resume", async (c) => {
         fileSize: file.size,
         fileKey
       });
-      const previewUrl = await getPresignedUrl(fileKey, 3600);
+      const previewUrl = `/api/candidates/${candidate.id}/resume`;
       await db.updateParseTask(task.id, {
         status: "completed",
         candidateId: candidate.id,

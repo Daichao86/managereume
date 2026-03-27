@@ -1,9 +1,12 @@
 // ==========================================
-// 候选人管理API路由（MySQL + MinIO版）
+// 候选人管理API路由（MySQL + 本地文件存储版）
 // ==========================================
 import { Hono } from 'hono'
 import { db } from '../lib/database'
-import { uploadFile, getPresignedUrl, getDownloadUrl, deleteFile, generateFileKey, getFileBuffer } from '../lib/storage'
+import {
+  uploadFile, deleteFile, generateFileKey,
+  getFileBuffer, getFileStat, keyToAbsPath
+} from '../lib/storage'
 import type { Candidate } from '../types'
 
 const candidates = new Hono()
@@ -17,21 +20,24 @@ candidates.get('/', async (c) => {
   const q = c.req.query()
   const { list, total } = await db.getCandidates({
     ...q,
-    page:        q.page        ? parseInt(q.page)        : 1,
-    pageSize:    q.pageSize    ? parseInt(q.pageSize)    : 10,
+    page:          q.page          ? parseInt(q.page)          : 1,
+    pageSize:      q.pageSize      ? parseInt(q.pageSize)      : 10,
     minExperience: q.minExperience ? parseFloat(q.minExperience) : undefined,
     maxExperience: q.maxExperience ? parseFloat(q.maxExperience) : undefined,
-    minAge:      q.minAge      ? parseInt(q.minAge)      : undefined,
-    maxAge:      q.maxAge      ? parseInt(q.maxAge)      : undefined,
-    minSalary:   q.minSalary   ? parseInt(q.minSalary)   : undefined,
-    maxSalary:   q.maxSalary   ? parseInt(q.maxSalary)   : undefined,
+    minAge:        q.minAge        ? parseInt(q.minAge)        : undefined,
+    maxAge:        q.maxAge        ? parseInt(q.maxAge)        : undefined,
+    minSalary:     q.minSalary     ? parseInt(q.minSalary)     : undefined,
+    maxSalary:     q.maxSalary     ? parseInt(q.maxSalary)     : undefined,
     minMatchScore: q.minMatchScore ? parseFloat(q.minMatchScore) : undefined,
-    isBlacklist: q.isBlacklist === 'true' ? true : q.isBlacklist === 'false' ? false : undefined,
+    isBlacklist:   q.isBlacklist === 'true' ? true : q.isBlacklist === 'false' ? false : undefined,
   })
-  return c.json({ success: true, data: list, total, page: parseInt(q.page||'1'), pageSize: parseInt(q.pageSize||'10') })
+  return c.json({
+    success: true, data: list, total,
+    page: parseInt(q.page || '1'), pageSize: parseInt(q.pageSize || '10')
+  })
 })
 
-// GET /api/candidates/stats/overview（注意：必须在 /:id 之前注册）
+// GET /api/candidates/stats/overview（须在 /:id 之前注册）
 candidates.get('/stats/overview', async (c) => {
   const stats = await db.getStatistics()
   return c.json({ success: true, data: stats })
@@ -76,8 +82,12 @@ candidates.patch('/:id/status', async (c) => {
     const id = parseInt(c.req.param('id'))
     const { candidateStatus } = await c.req.json() as { candidateStatus: string }
     const validStatuses = ['active', 'interviewing', 'hired', 'rejected', 'blacklist', 'archived']
-    if (!validStatuses.includes(candidateStatus)) return c.json({ success: false, message: '无效的状态值' }, 400)
-    const updated = await db.updateCandidate(id, { candidateStatus, isBlacklist: candidateStatus === 'blacklist' })
+    if (!validStatuses.includes(candidateStatus))
+      return c.json({ success: false, message: '无效的状态值' }, 400)
+    const updated = await db.updateCandidate(id, {
+      candidateStatus,
+      isBlacklist: candidateStatus === 'blacklist'
+    })
     if (!updated) return c.json({ success: false, message: '候选人不存在' }, 404)
     return c.json({ success: true, data: updated, message: '状态更新成功' })
   } catch (e: any) {
@@ -101,7 +111,7 @@ candidates.patch('/:id/notes', async (c) => {
 // DELETE /api/candidates/:id
 candidates.delete('/:id', async (c) => {
   const id = parseInt(c.req.param('id'))
-  // 删除前先清理 MinIO 文件
+  // 先清理本地文件
   const fileKey = await db.getResumeFileKey(id)
   if (fileKey) {
     try { await deleteFile(fileKey) } catch {}
@@ -124,10 +134,10 @@ candidates.post('/:id/interviews', async (c) => {
 })
 
 // ==========================================
-// 简历文件 API（MinIO版）
+// 简历文件 API（本地文件存储版）
 // ==========================================
 
-// GET /api/candidates/:id/resume/info - 文件元信息 + 预签名URL
+// GET /api/candidates/:id/resume/info - 文件元信息
 candidates.get('/:id/resume/info', async (c) => {
   const id = parseInt(c.req.param('id'))
   const candidate = await db.getCandidateById(id)
@@ -137,55 +147,57 @@ candidates.get('/:id/resume/info', async (c) => {
     return c.json({ success: true, hasFile: false, message: '暂无简历文件' })
   }
 
-  try {
-    // 生成 1 小时有效的预签名预览 URL 和下载 URL
-    const [previewUrl, downloadUrl] = await Promise.all([
-      getPresignedUrl(candidate.resumeFileKey, 3600),
-      getDownloadUrl(candidate.resumeFileKey, candidate.resumeFileName || 'resume', 3600),
-    ])
+  // 从磁盘读取文件状态（实时大小）
+  const stat = getFileStat(candidate.resumeFileKey)
 
-    return c.json({
-      success: true,
-      hasFile: true,
-      data: {
-        fileName:   candidate.resumeFileName,
-        fileType:   candidate.resumeFileType,
-        fileSize:   candidate.resumeFileSize,
-        uploadedAt: candidate.resumeUploadedAt,
-        previewUrl,   // 前端 iframe/img 直接使用，1小时有效
-        downloadUrl,  // 强制下载链接
-      }
-    })
-  } catch (e: any) {
-    return c.json({ success: false, message: `获取文件信息失败: ${e.message}` }, 500)
-  }
+  return c.json({
+    success: true,
+    hasFile: true,
+    data: {
+      fileName:   candidate.resumeFileName,
+      fileType:   candidate.resumeFileType,
+      fileSize:   stat?.size ?? candidate.resumeFileSize,
+      uploadedAt: candidate.resumeUploadedAt,
+      // 本地存储：预览和下载均走同一接口，通过 ?download=1 区分
+      previewUrl:  `/api/candidates/${id}/resume`,
+      downloadUrl: `/api/candidates/${id}/resume?download=1`,
+    }
+  })
 })
 
-// GET /api/candidates/:id/resume - 通过 Node.js 中转流式输出（兜底方案）
+// GET /api/candidates/:id/resume - 流式输出文件（预览 or 下载）
 candidates.get('/:id/resume', async (c) => {
   const id = parseInt(c.req.param('id'))
   const candidate = await db.getCandidateById(id)
   if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
-  if (!candidate.resumeFileKey) return c.json({ success: false, message: '该候选人暂无上传的简历文件' }, 404)
+  if (!candidate.resumeFileKey)
+    return c.json({ success: false, message: '该候选人暂无上传的简历文件' }, 404)
 
   try {
-    const download = c.req.query('download') === '1'
+    const download   = c.req.query('download') === '1'
+    const fileBuffer = await getFileBuffer(candidate.resumeFileKey)
+    const mimeType   = candidate.resumeFileType || 'application/octet-stream'
+    const safeFileName = encodeURIComponent(candidate.resumeFileName || 'resume')
 
-    // 优先重定向到预签名 URL（更高效，不占用 Node.js 带宽）
-    if (!download) {
-      const url = await getPresignedUrl(candidate.resumeFileKey, 3600)
-      return c.redirect(url, 302)
-    }
+    const disposition = download
+      ? `attachment; filename*=UTF-8''${safeFileName}`
+      : `inline; filename*=UTF-8''${safeFileName}`
 
-    // 强制下载：重定向到带 Content-Disposition 的预签名 URL
-    const url = await getDownloadUrl(candidate.resumeFileKey, candidate.resumeFileName || 'resume', 3600)
-    return c.redirect(url, 302)
+    return new Response(fileBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type':        mimeType,
+        'Content-Disposition': disposition,
+        'Content-Length':      String(fileBuffer.length),
+        'Cache-Control':       'private, no-cache',
+      }
+    })
   } catch (e: any) {
-    return c.json({ success: false, message: `文件获取失败: ${e.message}` }, 500)
+    return c.json({ success: false, message: `文件读取失败: ${e.message}` }, 500)
   }
 })
 
-// POST /api/candidates/:id/resume - 上传简历文件到 MinIO
+// POST /api/candidates/:id/resume - 上传（替换）简历文件
 candidates.post('/:id/resume', async (c) => {
   try {
     const id = parseInt(c.req.param('id'))
@@ -196,26 +208,23 @@ candidates.post('/:id/resume', async (c) => {
     const file = formData.get('file') as File | null
     if (!file) return c.json({ success: false, message: '请选择要上传的文件' }, 400)
 
-    // 文件类型校验
     const allowedExts = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp']
     const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
-    if (!allowedExts.includes(fileExt)) {
+    if (!allowedExts.includes(fileExt))
       return c.json({ success: false, message: '仅支持 PDF、Word、JPG、PNG 格式' }, 400)
-    }
-    if (file.size > 20 * 1024 * 1024) {
+    if (file.size > 20 * 1024 * 1024)
       return c.json({ success: false, message: '文件大小不能超过 20MB' }, 400)
-    }
 
     // 删除旧文件
     if (candidate.resumeFileKey) {
       try { await deleteFile(candidate.resumeFileKey) } catch {}
     }
 
-    // 上传到 MinIO
-    const fileKey = generateFileKey(id, file.name)
-    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    // 保存新文件到本地
+    const fileKey  = generateFileKey(id, file.name)
+    const buffer   = Buffer.from(await file.arrayBuffer())
     const mimeType = file.type || `application/${fileExt}`
-    await uploadFile(fileKey, fileBuffer, mimeType)
+    await uploadFile(fileKey, buffer, mimeType)
 
     // 更新 MySQL 元数据
     await db.saveResumeFileMeta(id, {
@@ -225,13 +234,15 @@ candidates.post('/:id/resume', async (c) => {
       fileKey,
     })
 
-    // 返回预览 URL
-    const previewUrl = await getPresignedUrl(fileKey, 3600)
-
     return c.json({
       success: true,
       message: '简历文件上传成功',
-      data: { fileName: file.name, fileType: mimeType, fileSize: file.size, previewUrl }
+      data: {
+        fileName:   file.name,
+        fileType:   mimeType,
+        fileSize:   file.size,
+        previewUrl: `/api/candidates/${id}/resume`,
+      }
     })
   } catch (e: any) {
     return c.json({ success: false, message: `上传失败: ${e.message}` }, 500)
@@ -244,11 +255,7 @@ candidates.delete('/:id/resume', async (c) => {
   const fileKey = await db.getResumeFileKey(id)
   if (!fileKey) return c.json({ success: false, message: '文件不存在' }, 404)
 
-  try {
-    await deleteFile(fileKey)
-  } catch (e) {
-    console.warn('MinIO 删除文件失败（继续清理元数据）:', e)
-  }
+  try { await deleteFile(fileKey) } catch {}
   await db.clearResumeFileMeta(id)
   return c.json({ success: true, message: '简历文件已删除' })
 })
