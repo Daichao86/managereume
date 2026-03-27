@@ -217,6 +217,10 @@ class MySQLDatabase {
     return ((await queryOne<any>('SELECT COUNT(*) as c FROM system_users'))?.c || 0) as number
   }
 
+  async updateLastLogin(id: number): Promise<void> {
+    await execute('UPDATE system_users SET last_login_at=NOW() WHERE id=?', [id])
+  }
+
   // ==========================================
   // 候选人列表（多条件过滤）
   // ==========================================
@@ -547,6 +551,59 @@ class MySQLDatabase {
 
     return { total, recentAdded, byStatus, byEducation, byChannel, byExperience, topSkills, avgMatchScore }
   }
+
+  // ==========================================
+  // 初始化超级管理员（启动时自动执行）
+  // ==========================================
+  async initSuperAdmin(): Promise<void> {
+    try {
+      // 检查 system_users 表是否存在
+      const tables = await query<any>(
+        "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'system_users'"
+      )
+      if (tables.length === 0) {
+        console.log('[DB] system_users 表不存在，请先执行 sql/init_admin.sql')
+        return
+      }
+
+      // 检查是否已有管理员
+      const count = await queryOne<any>('SELECT COUNT(*) as c FROM system_users WHERE role=?', ['admin'])
+      if (count && count.c > 0) {
+        console.log(`[DB] 管理员账号已存在 (${count.c} 个)，跳过初始化`)
+        return
+      }
+
+      // 动态 import crypto（避免循环依赖）
+      const { randomBytes, pbkdf2Sync } = await import('crypto')
+      const ITERATIONS = 100000
+      const KEYLEN = 64
+      const DIGEST = 'sha512'
+      const PREFIX = '$pbkdf2$'
+      const plain = 'Admin@2024'
+      const salt = randomBytes(16).toString('hex')
+      const hash = pbkdf2Sync(plain, salt, ITERATIONS, KEYLEN, DIGEST).toString('hex')
+      const hashedPwd = `${PREFIX}${salt}$${hash}`
+
+      await execute(
+        `INSERT IGNORE INTO system_users (id,username,real_name,email,phone,role,department,status,password)
+         VALUES (1,?,?,?,?,?,?,?,?)`,
+        ['admin', '系统管理员', 'admin@company.com', '13800000001', 'admin', '技术部', 'active', hashedPwd]
+      )
+      console.log('[DB] ✅ 超级管理员已创建 | 用户名: admin | 初始密码: Admin@2024 | 请登录后立即修改！')
+    } catch (e: any) {
+      // 表不存在时优雅降级，不阻塞启动
+      if (e.code === 'ER_NO_SUCH_TABLE') {
+        console.warn('[DB] system_users 表不存在，请执行 sql/init_admin.sql 创建表并初始化数据')
+      } else {
+        console.error('[DB] initSuperAdmin 失败:', e.message)
+      }
+    }
+  }
 }
 
 export const db = new MySQLDatabase()
+
+// 服务启动后异步初始化超级管理员（延迟2秒，等连接池就绪）
+setTimeout(() => {
+  db.initSuperAdmin().catch(e => console.error('[DB] 初始化超级管理员异常:', e.message))
+}, 2000)
