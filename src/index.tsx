@@ -3691,28 +3691,38 @@ function toggleApiKeyVisibility() {
   }
 }
 
+function normalizeApiBaseUrl(url) {
+  let u = (url || '').trim().replace(/\/+$/, '')
+  if (!u) return 'https://api.openai.com/v1'
+  // 若不以 /v数字 结尾，则补 /v1（防止用户填 https://xxx.com 或 https://xxx.com/）
+  if (!u.match(/\/v\d+$/)) u = u + '/v1'
+  return u
+}
+
 function saveApiSettings() {
   state.openaiKey = document.getElementById('apiKeyInput').value.trim()
-  state.openaiBaseUrl = document.getElementById('apiBaseUrlInput').value.trim() || 'https://api.openai.com/v1'
+  state.openaiBaseUrl = normalizeApiBaseUrl(document.getElementById('apiBaseUrlInput').value)
+  // 将规范化后的地址回填到输入框，让用户看到实际生效的地址
+  document.getElementById('apiBaseUrlInput').value = state.openaiBaseUrl
   localStorage.setItem('openai_key', state.openaiKey)
   localStorage.setItem('openai_base_url', state.openaiBaseUrl)
   updateAiStatus()
-  showToast('配置保存成功！', 'success')
+  showToast('配置保存成功！实际生效地址：' + state.openaiBaseUrl, 'success')
 }
 
 async function testApiConnection() {
   const key = document.getElementById('apiKeyInput').value.trim()
-  const baseUrl = document.getElementById('apiBaseUrlInput').value.trim() || 'https://api.openai.com/v1'
+  const baseUrl = normalizeApiBaseUrl(document.getElementById('apiBaseUrlInput').value)
   if (!key) { showToast('请先输入API Key', 'warning'); return }
   
-  showToast('正在测试连接...', 'info')
+  showToast('正在测试连接（地址：' + baseUrl + '）...', 'info')
   try {
     const res = await apiRequest('/api/upload/config', {
       method: 'POST',
       body: JSON.stringify({ openaiKey: key, openaiBaseUrl: baseUrl })
     })
-    if (res.success) showToast('连接测试成功！', 'success')
-    else showToast(res.message, 'error')
+    if (res.success) showToast('✅ ' + res.message, 'success')
+    else showToast('❌ ' + res.message, 'error')
   } catch (e) {
     showToast('连接测试失败: ' + e.message, 'error')
   }

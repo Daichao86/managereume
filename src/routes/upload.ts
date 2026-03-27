@@ -116,6 +116,9 @@ upload.post('/resume', async (c) => {
       friendlyMsg = '请求超时，请检查网络或 API Base URL 是否正确。'
     } else if (msg.includes('model') && msg.includes('not found')) {
       friendlyMsg = '模型不存在，请确认 API Key 有权限访问 gpt-4o。'
+    } else if (msg.includes('404') || msg.includes('no Route matched') || msg.includes('Not Found')) {
+      friendlyMsg = 'API地址错误(404)：请检查系统设置 → AI配置中的"API Base URL"。' +
+        '正确格式为 https://api.openai.com/v1 或您的代理地址（以 /v1 结尾，不要多填路径）。'
     }
     return c.json({ success: false, message: friendlyMsg }, 500)
   }
@@ -152,10 +155,13 @@ upload.post('/text', async (c) => {
     })
   } catch (e: any) {
     const msg: string = e.message || '未知错误'
-    let friendlyMsg = `解析失败: ${msg}`
+    let friendlyMsg = '简历解析失败: ' + msg
     if (msg.includes('401') || msg.includes('invalid_api_key')) friendlyMsg = 'API Key 无效，请检查系统设置。'
     else if (msg.includes('429')) friendlyMsg = 'OpenAI 请求频率超限，请稍后再试。'
     else if (msg.includes('quota')) friendlyMsg = 'OpenAI API 余额不足，请充值后再试。'
+    else if (msg.includes('404') || msg.includes('no Route matched') || msg.includes('Not Found')) {
+      friendlyMsg = 'API地址错误(404)：请在系统设置→AI配置中检查"API Base URL"，正确格式为 https://api.openai.com/v1（以/v1结尾）。'
+    }
     return c.json({ success: false, message: friendlyMsg }, 500)
   }
 })
@@ -173,11 +179,18 @@ upload.post('/config', async (c) => {
   try {
     const { openaiKey, openaiBaseUrl } = await c.req.json()
     if (!openaiKey) return c.json({ success: false, message: 'API Key不能为空' }, 400)
-    const testRes = await fetch(`${openaiBaseUrl || 'https://api.openai.com/v1'}/models`, {
+    // 规范化 base URL：去除尾部斜杠，确保以 /v1 结尾
+    let normalizedUrl = (openaiBaseUrl || 'https://api.openai.com/v1').trim().replace(/\/+$/, '')
+    if (!normalizedUrl.match(/\/v\d+$/)) normalizedUrl = normalizedUrl + '/v1'
+    const testRes = await fetch(`${normalizedUrl}/models`, {
       headers: { 'Authorization': `Bearer ${openaiKey}` }
     })
-    if (!testRes.ok) return c.json({ success: false, message: 'API Key无效，请检查后重试' }, 400)
-    return c.json({ success: true, message: 'API Key验证成功' })
+    if (!testRes.ok) {
+      if (testRes.status === 401) return c.json({ success: false, message: 'API Key无效或已过期，请重新填写正确的Key。' }, 400)
+      if (testRes.status === 404) return c.json({ success: false, message: 'API Base URL地址不存在(404)，请确认填写格式：https://api.openai.com/v1 或您的代理地址（需以/v1结尾）。当前地址：' + normalizedUrl }, 400)
+      return c.json({ success: false, message: 'API验证失败(' + testRes.status + ')，请检查Key和Base URL后重试。' }, 400)
+    }
+    return c.json({ success: true, message: 'API Key验证成功，Base URL：' + normalizedUrl })
   } catch (e: any) {
     return c.json({ success: false, message: `验证失败: ${e.message}` }, 500)
   }
