@@ -5,7 +5,7 @@ import { Hono } from 'hono'
 import { db } from '../lib/database'
 import {
   uploadFile, deleteFile, generateFileKey,
-  getFileBuffer, getFileStat, keyToAbsPath
+  getFileBuffer, getFileStat
 } from '../lib/storage'
 import type { Candidate } from '../types'
 
@@ -17,38 +17,61 @@ const candidates = new Hono()
 
 // GET /api/candidates - 列表（多条件过滤）
 candidates.get('/', async (c) => {
-  const q = c.req.query()
-  const { list, total } = await db.getCandidates({
-    ...q,
-    page:          q.page          ? parseInt(q.page)          : 1,
-    pageSize:      q.pageSize      ? parseInt(q.pageSize)      : 10,
-    minExperience: q.minExperience ? parseFloat(q.minExperience) : undefined,
-    maxExperience: q.maxExperience ? parseFloat(q.maxExperience) : undefined,
-    minAge:        q.minAge        ? parseInt(q.minAge)        : undefined,
-    maxAge:        q.maxAge        ? parseInt(q.maxAge)        : undefined,
-    minSalary:     q.minSalary     ? parseInt(q.minSalary)     : undefined,
-    maxSalary:     q.maxSalary     ? parseInt(q.maxSalary)     : undefined,
-    minMatchScore: q.minMatchScore ? parseFloat(q.minMatchScore) : undefined,
-    isBlacklist:   q.isBlacklist === 'true' ? true : q.isBlacklist === 'false' ? false : undefined,
-  })
-  return c.json({
-    success: true, data: list, total,
-    page: parseInt(q.page || '1'), pageSize: parseInt(q.pageSize || '10')
-  })
+  try {
+    const q = c.req.query()
+    const { list, total } = await db.getCandidates({
+      ...q,
+      page:          q.page          ? parseInt(q.page)          : 1,
+      pageSize:      q.pageSize      ? parseInt(q.pageSize)      : 10,
+      minExperience: q.minExperience ? parseFloat(q.minExperience) : undefined,
+      maxExperience: q.maxExperience ? parseFloat(q.maxExperience) : undefined,
+      minAge:        q.minAge        ? parseInt(q.minAge)        : undefined,
+      maxAge:        q.maxAge        ? parseInt(q.maxAge)        : undefined,
+      minSalary:     q.minSalary     ? parseInt(q.minSalary)     : undefined,
+      maxSalary:     q.maxSalary     ? parseInt(q.maxSalary)     : undefined,
+      minMatchScore: q.minMatchScore ? parseFloat(q.minMatchScore) : undefined,
+      isBlacklist:   q.isBlacklist === 'true' ? true : q.isBlacklist === 'false' ? false : undefined,
+    })
+    return c.json({
+      success: true, data: list, total,
+      page: parseInt(q.page || '1'), pageSize: parseInt(q.pageSize || '10')
+    })
+  } catch (e: any) {
+    console.error('[GET /candidates] DB error:', e.message)
+    return c.json({ success: false, message: `数据库查询失败: ${e.message}`, data: [], total: 0 }, 500)
+  }
 })
 
 // GET /api/candidates/stats/overview（须在 /:id 之前注册）
 candidates.get('/stats/overview', async (c) => {
-  const stats = await db.getStatistics()
-  return c.json({ success: true, data: stats })
+  try {
+    const stats = await db.getStatistics()
+    return c.json({ success: true, data: stats })
+  } catch (e: any) {
+    console.error('[GET /stats/overview] DB error:', e.message)
+    // 返回空统计数据，前端可正常渲染
+    return c.json({
+      success: false,
+      message: `统计数据查询失败: ${e.message}`,
+      data: {
+        total: 0, recentAdded: 0, avgMatchScore: 0,
+        byStatus: {}, byEducation: {}, byChannel: {}, byExperience: {}, topSkills: []
+      }
+    }, 500)
+  }
 })
 
 // GET /api/candidates/:id - 详情
 candidates.get('/:id', async (c) => {
-  const id = parseInt(c.req.param('id'))
-  const candidate = await db.getCandidateById(id)
-  if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
-  return c.json({ success: true, data: candidate })
+  try {
+    const id = parseInt(c.req.param('id'))
+    if (isNaN(id)) return c.json({ success: false, message: '无效的ID' }, 400)
+    const candidate = await db.getCandidateById(id)
+    if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
+    return c.json({ success: true, data: candidate })
+  } catch (e: any) {
+    return c.json({ success: false, message: `查询失败: ${e.message}` }, 500)
+  }
 })
 
 // POST /api/candidates - 创建
@@ -110,15 +133,18 @@ candidates.patch('/:id/notes', async (c) => {
 
 // DELETE /api/candidates/:id
 candidates.delete('/:id', async (c) => {
-  const id = parseInt(c.req.param('id'))
-  // 先清理本地文件
-  const fileKey = await db.getResumeFileKey(id)
-  if (fileKey) {
-    try { await deleteFile(fileKey) } catch {}
+  try {
+    const id = parseInt(c.req.param('id'))
+    const fileKey = await db.getResumeFileKey(id)
+    if (fileKey) {
+      try { await deleteFile(fileKey) } catch {}
+    }
+    const deleted = await db.deleteCandidate(id)
+    if (!deleted) return c.json({ success: false, message: '候选人不存在' }, 404)
+    return c.json({ success: true, message: '删除成功' })
+  } catch (e: any) {
+    return c.json({ success: false, message: `删除失败: ${e.message}` }, 500)
   }
-  const deleted = await db.deleteCandidate(id)
-  if (!deleted) return c.json({ success: false, message: '候选人不存在' }, 404)
-  return c.json({ success: true, message: '删除成功' })
 })
 
 // POST /api/candidates/:id/interviews
@@ -139,41 +165,42 @@ candidates.post('/:id/interviews', async (c) => {
 
 // GET /api/candidates/:id/resume/info - 文件元信息
 candidates.get('/:id/resume/info', async (c) => {
-  const id = parseInt(c.req.param('id'))
-  const candidate = await db.getCandidateById(id)
-  if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
+  try {
+    const id = parseInt(c.req.param('id'))
+    const candidate = await db.getCandidateById(id)
+    if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
 
-  if (!candidate.resumeFileKey) {
-    return c.json({ success: true, hasFile: false, message: '暂无简历文件' })
-  }
-
-  // 从磁盘读取文件状态（实时大小）
-  const stat = getFileStat(candidate.resumeFileKey)
-
-  return c.json({
-    success: true,
-    hasFile: true,
-    data: {
-      fileName:   candidate.resumeFileName,
-      fileType:   candidate.resumeFileType,
-      fileSize:   stat?.size ?? candidate.resumeFileSize,
-      uploadedAt: candidate.resumeUploadedAt,
-      // 本地存储：预览和下载均走同一接口，通过 ?download=1 区分
-      previewUrl:  `/api/candidates/${id}/resume`,
-      downloadUrl: `/api/candidates/${id}/resume?download=1`,
+    if (!candidate.resumeFileKey) {
+      return c.json({ success: true, hasFile: false, message: '暂无简历文件' })
     }
-  })
+
+    const stat = getFileStat(candidate.resumeFileKey)
+    return c.json({
+      success: true,
+      hasFile: true,
+      data: {
+        fileName:   candidate.resumeFileName,
+        fileType:   candidate.resumeFileType,
+        fileSize:   stat?.size ?? candidate.resumeFileSize,
+        uploadedAt: candidate.resumeUploadedAt,
+        previewUrl:  `/api/candidates/${id}/resume`,
+        downloadUrl: `/api/candidates/${id}/resume?download=1`,
+      }
+    })
+  } catch (e: any) {
+    return c.json({ success: false, message: `查询失败: ${e.message}` }, 500)
+  }
 })
 
 // GET /api/candidates/:id/resume - 流式输出文件（预览 or 下载）
 candidates.get('/:id/resume', async (c) => {
-  const id = parseInt(c.req.param('id'))
-  const candidate = await db.getCandidateById(id)
-  if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
-  if (!candidate.resumeFileKey)
-    return c.json({ success: false, message: '该候选人暂无上传的简历文件' }, 404)
-
   try {
+    const id = parseInt(c.req.param('id'))
+    const candidate = await db.getCandidateById(id)
+    if (!candidate) return c.json({ success: false, message: '候选人不存在' }, 404)
+    if (!candidate.resumeFileKey)
+      return c.json({ success: false, message: '该候选人暂无上传的简历文件' }, 404)
+
     const download   = c.req.query('download') === '1'
     const fileBuffer = await getFileBuffer(candidate.resumeFileKey)
     const mimeType   = candidate.resumeFileType || 'application/octet-stream'
@@ -215,18 +242,15 @@ candidates.post('/:id/resume', async (c) => {
     if (file.size > 20 * 1024 * 1024)
       return c.json({ success: false, message: '文件大小不能超过 20MB' }, 400)
 
-    // 删除旧文件
     if (candidate.resumeFileKey) {
       try { await deleteFile(candidate.resumeFileKey) } catch {}
     }
 
-    // 保存新文件到本地
     const fileKey  = generateFileKey(id, file.name)
     const buffer   = Buffer.from(await file.arrayBuffer())
     const mimeType = file.type || `application/${fileExt}`
     await uploadFile(fileKey, buffer, mimeType)
 
-    // 更新 MySQL 元数据
     await db.saveResumeFileMeta(id, {
       fileName: file.name,
       fileType: mimeType,
@@ -251,13 +275,16 @@ candidates.post('/:id/resume', async (c) => {
 
 // DELETE /api/candidates/:id/resume - 删除简历文件
 candidates.delete('/:id/resume', async (c) => {
-  const id = parseInt(c.req.param('id'))
-  const fileKey = await db.getResumeFileKey(id)
-  if (!fileKey) return c.json({ success: false, message: '文件不存在' }, 404)
-
-  try { await deleteFile(fileKey) } catch {}
-  await db.clearResumeFileMeta(id)
-  return c.json({ success: true, message: '简历文件已删除' })
+  try {
+    const id = parseInt(c.req.param('id'))
+    const fileKey = await db.getResumeFileKey(id)
+    if (!fileKey) return c.json({ success: false, message: '文件不存在' }, 404)
+    try { await deleteFile(fileKey) } catch {}
+    await db.clearResumeFileMeta(id)
+    return c.json({ success: true, message: '简历文件已删除' })
+  } catch (e: any) {
+    return c.json({ success: false, message: `删除失败: ${e.message}` }, 500)
+  }
 })
 
 export default candidates
