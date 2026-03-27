@@ -1464,7 +1464,7 @@ function getIndexHtml() {
     .tag-trait { background: #f3e8ff; color: #7e22ce; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
     .tag-education { background: #fef9c3; color: #a16207; font-size: 12px; padding: 1px 8px; border-radius: 9999px; }
     .status-badge { font-size: 12px; font-weight: 500; padding: 2px 10px; border-radius: 9999px; }
-    .loading-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+    .loading-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.55); z-index: 99999; display: flex; align-items: center; justify-content: center; pointer-events: all; }
     .card-hover { transition: all 0.2s; }
     .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1473,23 +1473,12 @@ function getIndexHtml() {
     .progress-bar { transition: width 0.6s ease; }
     .fade-in { animation: fadeIn 0.3s ease; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   </style>
 </head>
 <body class="bg-gray-50">
 
-<!-- 加载遮罩 -->
-<div id="loadingOverlay" class="loading-overlay hidden">
-  <div class="bg-white rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl max-w-sm w-full mx-4">
-    <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-    <div class="text-center">
-      <p class="font-semibold text-gray-800 text-lg" id="loadingTitle">AI解析中...</p>
-      <p class="text-gray-500 text-sm mt-1" id="loadingDesc">正在智能提取简历信息，请稍候</p>
-    </div>
-    <div class="w-full bg-gray-100 rounded-full h-2">
-      <div id="loadingBar" class="bg-blue-600 h-2 rounded-full progress-bar" style="width: 0%"></div>
-    </div>
-  </div>
-</div>
+
 
 <!-- Toast通知 -->
 <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm"></div>
@@ -1607,16 +1596,72 @@ function showToast(message, type = 'success') {
 }
 
 function showLoading(title = 'AI解析中...', desc = '正在智能提取简历信息，请稍候') {
-  document.getElementById('loadingTitle').textContent = title
-  document.getElementById('loadingDesc').textContent = desc
-  document.getElementById('loadingOverlay').classList.remove('hidden')
+  // 移除旧遮罩（防止重复叠加）
+  const old = document.getElementById('loadingOverlay')
+  if (old) old.remove()
+
+  // 动态创建遮罩并挂在 body 末尾，确保不受任何 overflow/transform 影响
+  const overlay = document.createElement('div')
+  overlay.id = 'loadingOverlay'
+  overlay.className = 'loading-overlay'
+  // 用 DOM API 构建内容，避免模板字符串在 TSX 大字符串内嵌套的解析问题
+  const card = document.createElement('div')
+  card.style.cssText = 'background:#fff;border-radius:18px;padding:32px;display:flex;flex-direction:column;align-items:center;gap:16px;box-shadow:0 25px 60px rgba(0,0,0,0.25);max-width:320px;width:calc(100% - 32px)'
+  const spinner = document.createElement('div')
+  spinner.style.cssText = 'width:56px;height:56px;border:4px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite'
+  const textBox = document.createElement('div')
+  textBox.style.cssText = 'text-align:center'
+  const titleEl = document.createElement('p')
+  titleEl.id = 'loadingTitle'
+  titleEl.style.cssText = 'font-weight:600;color:#1e293b;font-size:17px;margin:0'
+  titleEl.textContent = title
+  const descEl = document.createElement('p')
+  descEl.id = 'loadingDesc'
+  descEl.style.cssText = 'color:#64748b;font-size:13px;margin:6px 0 0'
+  descEl.textContent = desc
+  textBox.appendChild(titleEl)
+  textBox.appendChild(descEl)
+  const barWrap = document.createElement('div')
+  barWrap.style.cssText = 'width:100%;background:#f1f5f9;border-radius:999px;height:6px;overflow:hidden'
+  const barEl = document.createElement('div')
+  barEl.id = 'loadingBar'
+  barEl.style.cssText = 'background:#2563eb;height:100%;border-radius:999px;width:0%;transition:width 0.4s ease'
+  barWrap.appendChild(barEl)
+  const hint = document.createElement('p')
+  hint.style.cssText = 'color:#94a3b8;font-size:11px;margin:0'
+  hint.textContent = '请勿关闭页面，通常需要10~30秒'
+  card.appendChild(spinner)
+  card.appendChild(textBox)
+  card.appendChild(barWrap)
+  card.appendChild(hint)
+  overlay.appendChild(card)
+  document.body.appendChild(overlay)
+
   let progress = 0
   const bar = document.getElementById('loadingBar')
   const interval = setInterval(() => {
-    progress = Math.min(progress + Math.random() * 15, 90)
+    progress = Math.min(progress + Math.random() * 12, 90)
     bar.style.width = progress + '%'
-  }, 500)
-  return () => { clearInterval(interval); bar.style.width = '100%'; setTimeout(() => { document.getElementById('loadingOverlay').classList.add('hidden'); bar.style.width = '0%' }, 300) }
+  }, 600)
+
+  // 安全超时：最多 3 分钟自动关闭，防止因网络异常永久卡住
+  const safeTimer = setTimeout(() => {
+    clearInterval(interval)
+    const el = document.getElementById('loadingOverlay')
+    if (el) el.remove()
+    showToast('请求超时，请检查网络后重试', 'error')
+  }, 180000)
+
+  return () => {
+    clearInterval(interval)
+    clearTimeout(safeTimer)
+    const el = document.getElementById('loadingBar')
+    if (el) el.style.width = '100%'
+    setTimeout(() => {
+      const overlay = document.getElementById('loadingOverlay')
+      if (overlay) overlay.remove()
+    }, 350)
+  }
 }
 
 async function apiRequest(url, options = {}) {
